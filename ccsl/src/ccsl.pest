@@ -1,0 +1,29 @@
+file = { SOI ~ specification ~ EOI}
+specification = {"Specification" ~ id ~ "{" ~ clocks ~ ("[" ~ constraint+ ~ "]")? ~"}"}
+clocks = {"Clock" ~ id ~ ("," ~ id)*}
+constraint = { repeat | causal_chain | subclock_chain | exclusion_chain | let_expr | periodic_def }
+
+causal_chain = {"Precedence" ~ id ~ (causality_kind ~ causal_params? ~ id)+ }
+causality_kind = {"<" | "<="}
+causal_params = {"(" ~ "init:" ~ int ~ "max:" ~ int ~ ")"}
+
+repeat = { "repeat" ~ id ~ "every" ~ int? ~ id ~ ("from" ~ int)? ~ ("upTo" ~ int)? }
+periodic_def = { id ~ "=" ~ id ~ (delay | sampleOn | diff) }
+delay = {"$" ~ int ~ ("on" ~id)?}
+sampleOn = {"sampledOn" ~ id}
+diff = {"[" ~ int ~ "," ~ int ~ "]"}
+
+subclock_chain = {"SubClocking" ~ id ~ ("<-" ~ id)*}
+
+exclusion_chain = {"Exclusion" ~ id ~ ("#" ~ id)*}
+
+let_expr = {"Let" ~ id ~ "be" ~ expression}
+expression = {prefix_expr | sequence_expr}
+prefix_expr = {prefix_kind ~ "(" ~ expression ~")"}
+prefix_kind = {"inf" | "sup"}
+sequence_expr = { id ~ (operator ~ expression)* }
+operator = { "+" | "or" | "*" | "and" | "-" | "minus" }
+
+int = @{ "-"? ~ ASCII_DIGIT+ }
+id = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-")* }
+WHITESPACE = _{ " " | NEWLINE}
