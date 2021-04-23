@@ -79,7 +79,7 @@ where
         .map(|c| {
             g.add_node(ConflictSource {
                 name: (&c).to_string(),
-                transitions: c.transitions.len(),
+                transitions: c.transitions_len(),
             })
         })
         .collect();
@@ -89,8 +89,8 @@ where
                 count_conflict(c1.full_transitions(comb[i1]), c2.full_transitions(comb[i2]));
             let n1 = nodes[i1];
             let n2 = nodes[i2];
-            let sol_len1 = c1.transitions.len();
-            let sol_len2 = c2.transitions.len();
+            let sol_len1 = c1.transitions_len();
+            let sol_len2 = c2.transitions_len();
             g.add_edge(
                 n1,
                 n2,

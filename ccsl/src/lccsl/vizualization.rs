@@ -6,7 +6,7 @@ use std::rc::Rc;
 use itertools::Itertools;
 use petgraph::Graph;
 
-use crate::lccsl::automata::algo::conflict;
+use crate::lccsl::algo::conflict;
 use crate::lccsl::automata::{ClockLabel, Delta, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
 

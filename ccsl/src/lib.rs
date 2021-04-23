@@ -48,4 +48,8 @@ pub mod lccsl {
     pub mod runner;
 
     pub mod expressions;
+
+    pub mod algo;
+
+    pub mod vizualization;
 }

@@ -13,13 +13,13 @@ use petgraph::dot::{Config, Dot};
 use petgraph::Graph;
 use structopt::StructOpt;
 
-use ccsl::lccsl::automata::algo::{compare_approx_and_solutions, conflict_map_combinations};
-use ccsl::lccsl::automata::vizualization::unfold_specification;
+use ccsl::lccsl::algo::{compare_approx_and_solutions, conflict_map_combinations};
 use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Delay, Exclusion, Intersection, Precedence, Subclocking,
     Union,
 };
+use ccsl::lccsl::vizualization::unfold_specification;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "basic", about = "Visualization of LightCCSL constraints")]

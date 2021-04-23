@@ -271,6 +271,10 @@ where
             .collect();
         system
     }
+
+    pub fn transitions_len(&self) -> usize {
+        self.transitions.len()
+    }
 }
 
 impl<C, D, G> LabeledTransitionSystem<C, D, G>
@@ -362,6 +366,3 @@ mod macros {
         };
     }
 }
-
-pub mod algo;
-pub mod vizualization;
