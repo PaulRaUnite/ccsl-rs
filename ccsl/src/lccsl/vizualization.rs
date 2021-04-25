@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::iter::once;
-use std::rc::Rc;
 
 use itertools::Itertools;
 use petgraph::Graph;
 
-use crate::lccsl::algo::conflict;
 use crate::lccsl::automata::{ClockLabel, Delta, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
 
@@ -21,41 +18,37 @@ where
         .collect()
 }
 
-fn unfold_state_combination<C>(
-    spec: &[STS<C>],
-    comb: &[&State<BooleanExpression<Delta<C>>>],
-) -> Graph<String, ClockLabel<C>>
+fn unfold_state_combination<'a, 'b, C>(
+    spec: &'a [STS<C>],
+    comb: &'b [&'a State<BooleanExpression<Delta<C>>>],
+) -> Graph<String, ClockLabel<'a, C>>
 where
-    C: Hash + Clone + Ord,
+    C: Hash + Clone + Ord + 'a,
 {
     let mut g = Graph::new();
     let root = g.add_node("R".to_owned());
 
-    let mut previous_nodes: Vec<(Vec<Rc<HashMap<&C, bool>>>, _)> = vec![(vec![], root)];
+    let mut previous_nodes: Vec<(Vec<ClockLabel<C>>, _)> = vec![(vec![], root)];
 
     for (i, (c, s)) in spec.iter().zip(comb.iter()).enumerate() {
         previous_nodes = previous_nodes
             .iter()
-            .cartesian_product(
-                c.full_transitions(s)
-                    .map(|t| Rc::new(t))
-                    .collect::<Vec<_>>(),
-            )
+            .cartesian_product(c.transitions(s))
             .map(|((before, prev), t)| {
                 let mut conflicts = vec![];
                 for (i, t2) in before.iter().enumerate() {
-                    if conflict(&t, t2) {
+                    if t.label.has_conflict(t2) {
                         conflicts.push(i)
                     }
                 }
                 let next = g.add_node(format!("C{}({})", i, conflicts.iter().join(",")));
-                g.add_edge(
-                    *prev,
-                    next,
-                    t.iter().map(|(c, b)| (c.clone(), *b)).collect(),
-                );
+                g.add_edge(*prev, next, t.label.clone());
                 (
-                    before.iter().map(|v| v.clone()).chain(once(t)).collect(),
+                    before
+                        .iter()
+                        .map(|v| v.clone())
+                        .chain(once(t.label))
+                        .collect(),
                     next,
                 )
             })

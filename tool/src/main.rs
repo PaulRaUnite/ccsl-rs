@@ -1,6 +1,6 @@
 extern crate itertools;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
-use petgraph::dot::{Config, Dot};
+use petgraph::dot::Dot;
 use petgraph::Graph;
 use structopt::StructOpt;
 
@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into(),
     );
     for (name, c) in map.into_iter() {
-        let g: petgraph::Graph<_, _> = STS::from(c).into();
+        let g: petgraph::Graph<&_, _> = (&c).into();
         write_graph(&g, &opt.dir, name)?;
     }
 
@@ -215,18 +215,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             (numer as f64) / (denom as f64)
         );
     }
-
-    let dir = conflict_dir.join("squish");
-    let spec: Vec<_> = spec.into_iter().map(|c| c.squish()).collect();
-    let g = unfold_specification(&spec).into_iter().exactly_one()?;
-    write_graph(&g, &dir, "tree")?;
-
-    let g = conflict_map_combinations(&spec)
-        .into_iter()
-        .exactly_one()
-        .unwrap();
-    write_graph(&g, &dir, "map")?;
-
     for (actual, counter, approx) in compare_approx_and_solutions(&spec) {
         let (numer, denom) = approx.into();
         println!(
@@ -236,6 +224,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             (numer as f64) / (denom as f64)
         );
     }
+    {
+        let dir = conflict_dir.join("squish");
+        let spec: Vec<STS<_>> = spec.into_iter().map(|c| c.squish()).collect();
+        let g = conflict_map_combinations(&spec)
+            .into_iter()
+            .exactly_one()
+            .unwrap();
+        write_graph(&g, &dir, "map")?;
+
+        let g = unfold_specification(&spec)
+            .into_iter()
+            .exactly_one()
+            .unwrap();
+        write_graph(&g, &dir, "tree")?;
+    }
+
     // for name in names {
     //     Command::new("dot")
     //         .arg("-O")

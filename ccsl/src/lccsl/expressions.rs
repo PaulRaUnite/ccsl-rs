@@ -262,3 +262,41 @@ impl<D> BitXor for BooleanExpression<D> {
         }
     }
 }
+
+impl<D> Default for BooleanExpression<D> {
+    fn default() -> Self {
+        BooleanExpression::Constant(true)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Switch<G: Sized, R> {
+    variants: Vec<(G, R)>,
+    default: Option<(G, R)>,
+}
+
+impl<G: Default, R> Switch<G, R> {
+    pub fn new() -> Self {
+        Self {
+            variants: vec![],
+            default: None,
+        }
+    }
+
+    pub fn add_variant(&mut self, guard: G, result: R) {
+        self.variants.push((guard, result))
+    }
+    pub fn add_default_variant(&mut self, result: R) {
+        if self.default.is_some() {
+            panic!("can only be one default for a switch");
+        } else {
+            self.default = Some((G::default(), result));
+        }
+    }
+}
+
+impl<G, R> Switch<G, R> {
+    pub fn variants(&self) -> impl Iterator<Item = &(G, R)> + Clone {
+        self.variants.iter().chain(self.default.iter())
+    }
+}

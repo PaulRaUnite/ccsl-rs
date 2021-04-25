@@ -8,7 +8,7 @@ use num::{One, Rational64};
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, State, STS};
+use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, State, Transition, STS};
 use crate::lccsl::expressions::BooleanExpression;
 
 pub fn conflict<C: Eq + Hash>(m1: &HashMap<&C, bool>, m2: &HashMap<&C, bool>) -> bool {
@@ -29,7 +29,7 @@ pub struct ConflictRatio {
 impl fmt::Display for ConflictRatio {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let (nom, denom) = self.solutions.into();
-        write!(f, "{} ({})", (nom as f64) / (denom as f64), self.all)
+        write!(f, "{}/{} ({})", nom, denom, self.all)
     }
 }
 
@@ -76,21 +76,22 @@ where
     let mut g = Graph::new();
     let nodes: Vec<_> = spec
         .iter()
-        .map(|c| {
+        .enumerate()
+        .map(|(i, c)| {
             g.add_node(ConflictSource {
                 name: (&c).to_string(),
-                transitions: c.transitions_len(),
+                transitions: c.transitions_len(comb[i]),
             })
         })
         .collect();
     for (clock, constraints) in index.into_iter() {
         for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
             let (solutions, all) =
-                count_conflict(c1.full_transitions(comb[i1]), c2.full_transitions(comb[i2]));
+                count_conflict(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
             let n1 = nodes[i1];
             let n2 = nodes[i2];
-            let sol_len1 = c1.transitions_len();
-            let sol_len2 = c2.transitions_len();
+            let sol_len1 = c1.transitions_len(comb[i1]);
+            let sol_len2 = c2.transitions_len(comb[i2]);
             g.add_edge(
                 n1,
                 n2,
@@ -112,18 +113,19 @@ where
     g
 }
 
-fn count_conflict<'a, C: 'a>(
-    m1: impl Iterator<Item = HashMap<&'a C, bool>>,
-    m2: impl Iterator<Item = HashMap<&'a C, bool>> + Clone,
+fn count_conflict<'a, C: 'a, G>(
+    m1: impl Iterator<Item = Transition<'a, C, G>>,
+    m2: impl Iterator<Item = Transition<'a, C, G>> + Clone,
 ) -> (usize, usize)
 where
-    C: Eq + Hash + Clone,
+    C: Eq + Hash + Clone + Ord,
+    G: Clone,
 {
     let (mut solutions, mut all): (usize, usize) = (0, 0);
     for has_conflict in m1
         .into_iter()
         .cartesian_product(m2.into_iter())
-        .map(|(x, y)| conflict(&x, &y))
+        .map(|(x, y)| x.label.has_conflict(&y.label))
     {
         solutions += if has_conflict { 0 } else { 1 };
         all += 1;
@@ -156,7 +158,8 @@ impl CountingVisitor {
     }
 
     pub fn count(&mut self, a: SearchActions, s: usize) {
-        self.data.entry(a).and_modify(|v| *v += 1).or_insert(0);
+        let counter = self.data.entry(a).or_insert(0);
+        *counter += 1;
         self.solutions = s;
     }
 }
@@ -174,7 +177,7 @@ pub fn find_solutions<'a: 'b, 'b, C, G: 'b, D>(
 ) -> usize
 where
     C: Clone + Eq + Hash + Ord,
-    G: Guard<D>,
+    G: Guard<D> + Default,
 {
     rec_solutions(
         spec,
@@ -189,19 +192,19 @@ fn rec_solutions<'a, 'b, C, G: 'b, D>(
     spec: &'a [LabeledTransitionSystem<C, D, G>],
     states: &'b [&State<G>],
     visitor: &mut dyn FnMut(SearchActions, usize) -> (),
-    applied: HashMap<&'a C, bool>,
+    applied: HashMap<C, bool>,
 ) -> Option<usize>
 where
     C: Clone + Eq + Hash + Ord,
-    G: Guard<D>,
+    G: Guard<D> + Default,
 {
     let (sts, spec) = spec.split_first()?;
     let (state, states) = states.split_first()?;
     let solutions: usize = sts
-        .full_transitions(state)
+        .transitions(state)
         .map(|t| {
             visitor(SearchActions::Test, 0);
-            if !conflict(&t, &applied) {
+            if !t.label.has_conflict_with_map(&applied) {
                 visitor(SearchActions::Down, 0);
                 rec_solutions(
                     spec,
@@ -210,7 +213,8 @@ where
                     applied
                         .iter()
                         .map(|(c, b)| (c.clone(), *b))
-                        .chain(t.into_iter())
+                        .chain(t.label.clocks.iter().map(|c| (c.clone(), false)))
+                        .chain(t.label.present.into_iter().map(|c| (c.clone(), true)))
                         .collect(),
                 )
                 .unwrap_or(1)

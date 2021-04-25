@@ -6,7 +6,7 @@ use std::iter::once;
 
 use itertools::Itertools;
 
-use crate::lccsl::automata::{ClockLabel, Delta, State, STS};
+use crate::lccsl::automata::{Delta, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 use std::convert::TryFrom;
@@ -256,7 +256,7 @@ where
                     comb.into_iter()
                         .chain(once(&c.out))
                         .map(|c| (c.clone(), true))
-                        .collect(),
+                        .collect_vec(),
                 )
             }
         }
@@ -285,7 +285,7 @@ where
                 .into_iter()
                 .chain(once(c.out))
                 .map(|c| (c, true))
-                .collect(),
+                .collect_vec(),
         );
         tr!(system, &start => &start, {});
         system
