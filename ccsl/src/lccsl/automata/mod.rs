@@ -109,18 +109,13 @@ pub struct ClockLabel<'a, C> {
 
 impl<C: Ord + Hash> ClockLabel<'_, C> {
     pub fn has_conflict(&self, rhs: &Self) -> bool {
-        if self.clocks.intersection(&rhs.clocks).count() == 0 {
-            false
+        if let Some(first) = self.clocks.intersection(&rhs.clocks).next() {
+            self.present
+                .range(first..)
+                .zip_longest(rhs.present.range(first..))
+                .any(|pair| pair.both().map(|(l, r)| l != r).unwrap_or(true))
         } else {
-            let first = self.present.iter().next();
-            if let Some(first) = first {
-                self.present
-                    .range(first..)
-                    .zip_longest(rhs.present.range(first..))
-                    .any(|pair| pair.both().map(|(l, r)| l != r).unwrap_or(true))
-            } else {
-                true
-            }
+            false
         }
     }
 

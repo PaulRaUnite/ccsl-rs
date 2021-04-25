@@ -137,7 +137,6 @@ where
 pub enum SearchActions {
     Test,
     Down,
-    Up,
 }
 
 fn dummy_visitor(_: SearchActions, _: usize) {}
@@ -223,7 +222,6 @@ where
             }
         })
         .sum();
-    visitor(SearchActions::Up, solutions);
     Some(solutions)
 }
 

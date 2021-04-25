@@ -26,7 +26,7 @@ where
     C: Hash + Clone + Ord + 'a,
 {
     let mut g = Graph::new();
-    let root = g.add_node("R".to_owned());
+    let root = g.add_node(format!("0:{}", spec[0]));
 
     let mut previous_nodes: Vec<(Vec<ClockLabel<C>>, _)> = vec![(vec![], root)];
 
@@ -41,7 +41,17 @@ where
                         conflicts.push(i)
                     }
                 }
-                let next = g.add_node(format!("C{}({})", i, conflicts.iter().join(",")));
+
+                let conflicts = if conflicts.len() == 0 {
+                    "".to_owned()
+                } else {
+                    format!("({})", conflicts.iter().join(","))
+                };
+                let next = if i != spec.len() - 1 {
+                    g.add_node(format!("{}:{}{}", i, spec[i + 1], conflicts))
+                } else {
+                    g.add_node(format!("S{}", conflicts))
+                };
                 g.add_edge(*prev, next, t.label.clone());
                 (
                     before

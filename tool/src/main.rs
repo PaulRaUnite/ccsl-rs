@@ -215,6 +215,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             (numer as f64) / (denom as f64)
         );
     }
+    let dir = conflict_dir.join("squish");
+    let spec: Vec<STS<_>> = spec.into_iter().map(|c| c.squish()).collect();
+    let g = conflict_map_combinations(&spec)
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    write_graph(&g, &dir, "map")?;
+
+    let g = unfold_specification(&spec)
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    write_graph(&g, &dir, "tree")?;
+
     for (actual, counter, approx) in compare_approx_and_solutions(&spec) {
         let (numer, denom) = approx.into();
         println!(
@@ -223,21 +237,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             counter,
             (numer as f64) / (denom as f64)
         );
-    }
-    {
-        let dir = conflict_dir.join("squish");
-        let spec: Vec<STS<_>> = spec.into_iter().map(|c| c.squish()).collect();
-        let g = conflict_map_combinations(&spec)
-            .into_iter()
-            .exactly_one()
-            .unwrap();
-        write_graph(&g, &dir, "map")?;
-
-        let g = unfold_specification(&spec)
-            .into_iter()
-            .exactly_one()
-            .unwrap();
-        write_graph(&g, &dir, "tree")?;
     }
 
     // for name in names {
