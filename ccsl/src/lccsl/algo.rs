@@ -245,21 +245,39 @@ where
     Some(solutions)
 }
 
-pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Option<(usize, usize)> {
+#[derive(Debug, Default, Copy, Clone)]
+pub struct Approximation {
+    pub solutions: usize,
+    pub all: usize,
+    pub downs: usize,
+    pub tests: usize,
+}
+
+impl fmt::Display for Approximation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Approximation {
     if g.node_count() == 0 {
-        return None;
+        return Approximation::default();
     }
     let mut selected: HashSet<_> = HashSet::new();
-    let mut solution_amount = 1usize;
-    let mut all_amount = 1usize;
+    let mut aprox = Approximation {
+        solutions: 1,
+        all: 1,
+        downs: 0,
+        tests: 0,
+    };
     for to in g.node_indices() {
         let (solution, all) = g
             .edges_directed(to, Direction::Incoming)
             .filter_map(|e| {
                 if selected.contains(&e.source()) {
                     Some((
-                        solution_amount * e.weight().solutions,
-                        all_amount * e.weight().all,
+                        aprox.solutions * e.weight().solutions,
+                        aprox.all * e.weight().all,
                     ))
                 } else {
                     None
@@ -268,16 +286,20 @@ pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Optio
             .min_by_key(|(s, _)| *s)
             .unwrap_or_else(|| {
                 let t = g.node_weight(to).unwrap().transitions;
-                (solution_amount * t, all_amount * t)
+                (aprox.solutions * t, aprox.all * t)
             });
         selected.insert(to);
-        solution_amount = solution;
-        all_amount = all;
+        aprox.downs += solution;
+        aprox.tests += aprox.solutions * g.node_weight(to).unwrap().transitions;
+        aprox.solutions = solution;
+        aprox.all = all;
     }
-    Some((solution_amount, all_amount))
+    aprox
 }
 
-pub fn compare_approx_and_solutions<C>(spec: &[STS<C>]) -> Vec<(usize, CountingVisitor, usize)>
+pub fn compare_approx_and_solutions<C>(
+    spec: &[STS<C>],
+) -> Vec<(usize, CountingVisitor, Approximation)>
 where
     C: Ord + Hash + Clone + Debug,
 {
@@ -289,9 +311,7 @@ where
             (
                 find_solutions(spec, &comb, Some(&mut visitor)),
                 visitor,
-                approximate_complexity(&conflict_map(spec, &comb))
-                    .unwrap()
-                    .0,
+                approximate_complexity(&conflict_map(spec, &comb)),
             )
         })
         .collect()
