@@ -54,7 +54,11 @@ struct Opt {
     // #[structopt(short, long)]
     // level: Vec<String>,
     /// Files to process
-    #[structopt(name = "DIR", parse(from_os_str), default_value = "./dot/")]
+    #[structopt(
+        name = "DIR",
+        parse(from_os_str),
+        default_value = "/home/paulra/Code/ccsl-rs/tool/dot/"
+    )]
     dir: PathBuf,
 }
 
@@ -173,6 +177,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             max: None,
         }
         .into(),
+        Delay {
+            out: "d",
+            base: "a",
+            delay: 1,
+            on: None,
+        }
+        .into(),
         Precedence {
             left: "b",
             right: "c",
@@ -187,17 +198,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             max: None,
         }
         .into(),
-        Delay {
-            out: "d",
-            base: "a",
-            delay: 1,
-            on: None,
-        }
-        .into(),
     ];
     let conflict_dir = opt.dir.join("conflict");
-    let dir = conflict_dir.join("tree");
-    for (i, g) in unfold_specification(&spec).iter().enumerate() {
+    let dir = conflict_dir.join("tree/full");
+    for (i, g) in unfold_specification(&spec, false).iter().enumerate() {
+        write_graph(g, &dir, &i.to_string())?;
+    }
+    let dir = conflict_dir.join("tree/trimmed");
+    for (i, g) in unfold_specification(&spec, true).iter().enumerate() {
         write_graph(g, &dir, &i.to_string())?;
     }
 
@@ -207,12 +215,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     for (actual, counter, approx) in compare_approx_and_solutions(&spec) {
-        let (numer, denom) = approx.into();
         println!(
-            "actual: {}, counter: {}, approximation: {:.4}",
-            actual,
-            counter,
-            (numer as f64) / (denom as f64)
+            "actual: {}, counter: {}, approximation: {}",
+            actual, counter, approx,
         );
     }
     let dir = conflict_dir.join("squish");
@@ -223,19 +228,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap();
     write_graph(&g, &dir, "map")?;
 
-    let g = unfold_specification(&spec)
+    let g = unfold_specification(&spec, true)
         .into_iter()
         .exactly_one()
         .unwrap();
-    write_graph(&g, &dir, "tree")?;
+    write_graph(&g, &dir, "tree_trimmed")?;
+    let g = unfold_specification(&spec, false)
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    write_graph(&g, &dir, "tree_full")?;
 
+    println!("squashed");
     for (actual, counter, approx) in compare_approx_and_solutions(&spec) {
-        let (numer, denom) = approx.into();
         println!(
-            "actual: {}, counter: {}, approximation: {:.4}",
-            actual,
-            counter,
-            (numer as f64) / (denom as f64)
+            "actual: {}, counter: {}, approximation: {}",
+            actual, counter, approx
         );
     }
 

@@ -1,14 +1,13 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
 use itertools::Itertools;
-use num::{One, Rational64};
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, State, Transition, STS};
+use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, MergedTransition, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
 
 pub fn conflict<C: Eq + Hash>(m1: &HashMap<&C, bool>, m2: &HashMap<&C, bool>) -> bool {
@@ -22,14 +21,13 @@ pub fn conflict<C: Eq + Hash>(m1: &HashMap<&C, bool>, m2: &HashMap<&C, bool>) ->
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConflictRatio {
-    pub solutions: Rational64,
+    pub solutions: usize,
     pub all: usize,
 }
 
 impl fmt::Display for ConflictRatio {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (nom, denom) = self.solutions.into();
-        write!(f, "{}/{} ({})", nom, denom, self.all)
+        write!(f, "{} ({})", self.solutions, self.all)
     }
 }
 
@@ -84,10 +82,9 @@ where
             })
         })
         .collect();
-    for (clock, constraints) in index.into_iter() {
+    for (_, constraints) in index.into_iter() {
         for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
-            let (solutions, all) =
-                count_conflict(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
+            let solutions = count_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
             let n1 = nodes[i1];
             let n2 = nodes[i2];
             let sol_len1 = c1.transitions_len(comb[i1]);
@@ -96,7 +93,7 @@ where
                 n1,
                 n2,
                 ConflictRatio {
-                    solutions: Rational64::new(solutions as i64, sol_len1 as i64),
+                    solutions,
                     all: sol_len2,
                 },
             );
@@ -104,7 +101,7 @@ where
                 n2,
                 n1,
                 ConflictRatio {
-                    solutions: Rational64::new(solutions as i64, sol_len2 as i64),
+                    solutions,
                     all: sol_len1,
                 },
             );
@@ -113,66 +110,85 @@ where
     g
 }
 
-fn count_conflict<'a, C: 'a, G>(
-    m1: impl Iterator<Item = Transition<'a, C, G>>,
-    m2: impl Iterator<Item = Transition<'a, C, G>> + Clone,
-) -> (usize, usize)
+fn count_solutions<'a, C, G>(
+    m1: impl Iterator<Item = MergedTransition<'a, C, G>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C, G>> + Clone,
+) -> usize
 where
-    C: Eq + Hash + Clone + Ord,
-    G: Clone,
+    C: Eq + Hash + Clone + Ord + 'a,
+    G: Clone + 'a,
 {
-    let (mut solutions, mut all): (usize, usize) = (0, 0);
-    for has_conflict in m1
-        .into_iter()
-        .cartesian_product(m2.into_iter())
-        .map(|(x, y)| x.label.has_conflict(&y.label))
-    {
-        solutions += if has_conflict { 0 } else { 1 };
-        all += 1;
-    }
-    (solutions, all)
+    m1.into_iter()
+        .map(|x| {
+            m2.clone()
+                .into_iter()
+                .map(move |y| if x.label.has_conflict(&y.label) { 0 } else { 1 })
+                .sum()
+        })
+        .max()
+        .unwrap_or(0)
 }
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub enum SearchActions {
-    Test,
-    Down,
-}
-
-fn dummy_visitor(_: SearchActions, _: usize) {}
-fn logging_visitor(a: SearchActions, v: usize) {
-    println!("{:?}: {}", a, v);
-}
 pub struct CountingVisitor {
-    data: BTreeMap<SearchActions, usize>,
+    test: usize,
+    down: usize,
     solutions: usize,
+}
+
+pub trait Visitor<C> {
+    fn test(&mut self);
+    fn down(&mut self);
+    fn solution(&mut self, sol: &HashMap<C, bool>);
 }
 
 impl CountingVisitor {
     pub fn new() -> Self {
         Self {
-            data: BTreeMap::new(),
+            test: 0,
+            down: 0,
             solutions: 0,
         }
     }
+}
 
-    pub fn count(&mut self, a: SearchActions, s: usize) {
-        let counter = self.data.entry(a).or_insert(0);
-        *counter += 1;
-        self.solutions = s;
+impl<C: fmt::Debug> Visitor<C> for CountingVisitor {
+    fn test(&mut self) {
+        self.test += 1;
+    }
+
+    fn down(&mut self) {
+        self.down += 1;
+    }
+
+    fn solution(&mut self, _: &HashMap<C, bool>) {
+        self.solutions += 1;
     }
 }
 
 impl fmt::Display for CountingVisitor {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} {}", self.data, self.solutions)
+        write!(
+            f,
+            "tests: {} downs: {} solutions: {}",
+            self.test, self.down, self.solutions
+        )
     }
+}
+
+struct DummyVisitor;
+
+impl<C> Visitor<C> for DummyVisitor {
+    fn test(&mut self) {}
+
+    fn down(&mut self) {}
+
+    fn solution(&mut self, _: &HashMap<C, bool>) {}
 }
 
 pub fn find_solutions<'a: 'b, 'b, C, G: 'b, D>(
     spec: &'a [LabeledTransitionSystem<C, D, G>],
     states: &'b [&State<G>],
-    visitor: Option<&mut dyn FnMut(SearchActions, usize) -> ()>,
+    visitor: Option<&mut dyn Visitor<C>>,
 ) -> usize
 where
     C: Clone + Eq + Hash + Ord,
@@ -181,7 +197,7 @@ where
     rec_solutions(
         spec,
         states,
-        visitor.unwrap_or(&mut dummy_visitor),
+        visitor.unwrap_or(&mut DummyVisitor),
         HashMap::with_capacity(spec.iter().map(|c| c.clocks().len()).sum()),
     )
     .unwrap_or(0)
@@ -190,7 +206,7 @@ where
 fn rec_solutions<'a, 'b, C, G: 'b, D>(
     spec: &'a [LabeledTransitionSystem<C, D, G>],
     states: &'b [&State<G>],
-    visitor: &mut dyn FnMut(SearchActions, usize) -> (),
+    visitor: &mut dyn Visitor<C>,
     applied: HashMap<C, bool>,
 ) -> Option<usize>
 where
@@ -202,21 +218,25 @@ where
     let solutions: usize = sts
         .transitions(state)
         .map(|t| {
-            visitor(SearchActions::Test, 0);
+            visitor.test();
             if !t.label.has_conflict_with_map(&applied) {
-                visitor(SearchActions::Down, 0);
+                visitor.down();
                 rec_solutions(
                     spec,
                     states,
                     visitor,
                     applied
                         .iter()
-                        .map(|(c, b)| (c.clone(), *b))
-                        .chain(t.label.clocks.iter().map(|c| (c.clone(), false)))
-                        .chain(t.label.present.into_iter().map(|c| (c.clone(), true)))
+                        .map(|(c, b)| (c, *b))
+                        .chain(t.label.clocks.iter().map(|c| (c, false)))
+                        .chain(t.label.present.iter().map(|c| (c, true)))
+                        .map(|(c, b)| (c.clone(), b))
                         .collect(),
                 )
-                .unwrap_or(1)
+                .unwrap_or_else(|| {
+                    visitor.solution(&applied);
+                    1
+                })
             } else {
                 0
             }
@@ -225,40 +245,41 @@ where
     Some(solutions)
 }
 
-pub fn approximate_complexity(
-    g: &Graph<ConflictSource, ConflictRatio>,
-) -> Option<(Rational64, Rational64)> {
-    let mut selected: HashMap<_, (Rational64, Rational64)> = HashMap::new();
-    let mut solution_amount = Rational64::one();
-    let mut all_amount = Rational64::one();
+pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Option<(usize, usize)> {
+    if g.node_count() == 0 {
+        return None;
+    }
+    let mut selected: HashSet<_> = HashSet::new();
+    let mut solution_amount = 1usize;
+    let mut all_amount = 1usize;
     for to in g.node_indices() {
         let (solution, all) = g
             .edges_directed(to, Direction::Incoming)
-            .map(|e| {
-                selected
-                    .get(&e.source())
-                    .map(|(s, a)| (s * e.weight().solutions, a * (e.weight().all as i64)))
+            .filter_map(|e| {
+                if selected.contains(&e.source()) {
+                    Some((
+                        solution_amount * e.weight().solutions,
+                        all_amount * e.weight().all,
+                    ))
+                } else {
+                    None
+                }
             })
-            .flatten()
             .min_by_key(|(s, _)| *s)
             .unwrap_or_else(|| {
-                let t = Rational64::new(g.node_weight(to).unwrap().transitions as i64, 1);
+                let t = g.node_weight(to).unwrap().transitions;
                 (solution_amount * t, all_amount * t)
             });
-        selected.insert(to, (solution, all));
+        selected.insert(to);
         solution_amount = solution;
         all_amount = all;
     }
-    g.node_indices()
-        .last()
-        .map(|n| selected.get(&n))
-        .flatten()
-        .map(|v| *v)
+    Some((solution_amount, all_amount))
 }
 
-pub fn compare_approx_and_solutions<C>(spec: &[STS<C>]) -> Vec<(usize, CountingVisitor, Rational64)>
+pub fn compare_approx_and_solutions<C>(spec: &[STS<C>]) -> Vec<(usize, CountingVisitor, usize)>
 where
-    C: Ord + Hash + Clone,
+    C: Ord + Hash + Clone + Debug,
 {
     spec.iter()
         .map(|sts| sts.states().iter())
@@ -266,7 +287,7 @@ where
         .map(|comb: Vec<&State<BooleanExpression<Delta<C>>>>| {
             let mut visitor = CountingVisitor::new();
             (
-                find_solutions(spec, &comb, Some(&mut |a, s| visitor.count(a, s))),
+                find_solutions(spec, &comb, Some(&mut visitor)),
                 visitor,
                 approximate_complexity(&conflict_map(spec, &comb))
                     .unwrap()

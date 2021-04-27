@@ -270,7 +270,7 @@ impl<D> Default for BooleanExpression<D> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Switch<G: Sized, R> {
+pub struct Switch<G, R> {
     variants: Vec<(G, R)>,
     default: Option<(G, R)>,
 }

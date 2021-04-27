@@ -1,6 +1,7 @@
 use crate::lccsl::expressions::{BooleanExpression, Switch};
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
@@ -46,6 +47,18 @@ impl<G> PartialEq for State<G> {
     }
 }
 
+impl<G> PartialOrd for State<G> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.id.partial_cmp(&other.id)
+    }
+}
+
+impl<G> Ord for State<G> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
 impl<G> Hash for State<G> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         &self.id.hash(state);
@@ -81,23 +94,15 @@ impl<G> State<G> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Transition<'a, C, G> {
+pub struct MergedTransition<'a, C, G> {
     pub from: State<G>,
-    pub to: State<G>,
     pub label: ClockLabel<'a, C>,
-    pub guard: Option<Rc<G>>,
+    pub switch: &'a Switch<G, State<G>>,
 }
 
-impl<C: fmt::Display, G: fmt::Display> fmt::Display for Transition<'_, C, G> {
+impl<C: fmt::Display, G: fmt::Display> fmt::Display for MergedTransition<'_, C, G> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.label)?;
-        if let Some(g) = &self.guard {
-            write!(f, " [")?;
-            write!(f, "{}", g)?;
-            write!(f, "]")
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", &self.label)
     }
 }
 
@@ -109,21 +114,19 @@ pub struct ClockLabel<'a, C> {
 
 impl<C: Ord + Hash> ClockLabel<'_, C> {
     pub fn has_conflict(&self, rhs: &Self) -> bool {
-        if let Some(first) = self.clocks.intersection(&rhs.clocks).next() {
-            self.present
-                .range(first..)
-                .zip_longest(rhs.present.range(first..))
-                .any(|pair| pair.both().map(|(l, r)| l != r).unwrap_or(true))
-        } else {
-            false
+        for v in self.clocks.intersection(&rhs.clocks) {
+            if self.present.get(v) != rhs.present.get(v) {
+                return true;
+            }
         }
+        false
     }
 
     pub fn has_conflict_with_map(&self, rhs: &HashMap<C, bool>) -> bool {
-        for c in self.present {
-            if let Some(ok) = rhs.get(c) {
-                if !ok {
-                    return false;
+        for c in self.clocks {
+            if let Some(v) = rhs.get(c) {
+                if self.present.contains(c) != *v {
+                    return true;
                 }
             }
         }
@@ -131,18 +134,50 @@ impl<C: Ord + Hash> ClockLabel<'_, C> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::lccsl::automata::ClockLabel;
+    use std::collections::{BTreeSet, HashMap};
+    use std::iter::FromIterator;
+
+    #[test]
+    fn conflicts() {
+        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
+
+        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let v2 = BTreeSet::from_iter(vec!["b"]);
+
+        let lab1 = ClockLabel {
+            present: &v1,
+            clocks: &c1,
+        };
+        let lab2 = ClockLabel {
+            present: &v2,
+            clocks: &c2,
+        };
+
+        assert_eq!(lab1.has_conflict(&lab2), false);
+    }
+    #[test]
+    fn conflicts2() {
+        let m = HashMap::from_iter(vec![("a", true), ("b", false)]);
+        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
+
+        let v2 = BTreeSet::from_iter(vec!["c"]);
+
+        let lab2 = ClockLabel {
+            present: &v2,
+            clocks: &c2,
+        };
+
+        assert_eq!(lab2.has_conflict_with_map(&m), true);
+    }
+}
+
 impl<C: fmt::Display> fmt::Display for ClockLabel<'_, C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "(")?;
-
-        let last: usize = self.present.len() - 1;
-        for (i, clock) in self.present.iter().enumerate() {
-            write!(f, "{}", clock)?;
-            if i != last {
-                write!(f, ".")?;
-            }
-        }
-        write!(f, ")")
+        write!(f, "({})", self.present.iter().join("."))
     }
 }
 
@@ -152,9 +187,9 @@ where
     G: Guard<D>,
 {
     name: String,
-    states: HashSet<State<G>>,
+    states: BTreeSet<State<G>>,
     clocks: BTreeSet<C>,
-    transitions: HashMap<State<G>, HashMap<BTreeSet<C>, Switch<G, State<G>>>>,
+    transitions: HashMap<State<G>, BTreeMap<BTreeSet<C>, Switch<G, State<G>>>>,
     initial_state: State<G>,
     _phantom: PhantomData<D>,
 }
@@ -167,7 +202,7 @@ where
     G: Guard<D> + Default,
 {
     pub fn new(name: impl ToString, initial: State<G>) -> Self {
-        let mut states = HashSet::with_capacity(1);
+        let mut states = BTreeSet::new();
         states.insert(initial.clone());
         Self {
             name: name.to_string(),
@@ -209,7 +244,7 @@ where
         let switch = self
             .transitions
             .entry(from.clone())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(|| Default::default())
             .entry(label)
             .or_insert_with(|| Switch::new());
         if let Some(guard) = guard {
@@ -238,33 +273,29 @@ where
         self.add_transition_with_guard_private(from, to, label, Some(guard));
     }
 
-    pub fn states(&self) -> &HashSet<State<G>> {
+    pub fn states(&self) -> &BTreeSet<State<G>> {
         &self.states
     }
 
     pub fn transitions<'a>(
         &'a self,
         state: &'a State<G>,
-    ) -> impl Iterator<Item = Transition<'a, C, G>> + Clone {
-        self.transitions
-            .get(&state)
-            .into_iter()
-            .flat_map(move |trans: &'a HashMap<_, _>| {
+    ) -> impl Iterator<Item = MergedTransition<'a, C, G>> + Clone {
+        self.transitions.get(&state).into_iter().flat_map(
+            move |trans: &'a BTreeMap<_, Switch<G, State<G>>>| {
                 trans
                     .iter()
                     .zip(repeat((self, state)))
-                    .flat_map(|((label, switch), (s, state))| {
-                        switch.variants().map(move |(g, to)| Transition {
-                            from: state.clone(),
-                            to: to.clone(),
-                            label: ClockLabel {
-                                present: label,
-                                clocks: &s.clocks,
-                            },
-                            guard: None,
-                        })
+                    .map(|((label, switch), (s, state))| MergedTransition {
+                        from: state.clone(),
+                        label: ClockLabel {
+                            present: label,
+                            clocks: &s.clocks,
+                        },
+                        switch,
                     })
-            })
+            },
+        )
     }
 
     pub fn clocks(&self) -> &BTreeSet<C> {
@@ -285,7 +316,7 @@ where
             let map = system
                 .transitions
                 .entry(state.clone())
-                .or_insert_with(|| HashMap::new());
+                .or_insert_with(|| Default::default());
             map.entry(label).or_insert_with(|| {
                 let mut s = Switch::new();
                 s.add_default_variant(state.clone());
@@ -301,7 +332,7 @@ where
 }
 
 impl<'a, C, D, G> From<&'a LabeledTransitionSystem<C, D, G>>
-    for petgraph::Graph<&'a State<G>, Transition<'a, C, G>>
+    for petgraph::Graph<&'a State<G>, ClockLabel<'a, C>>
 where
     C: Eq + Hash + Clone + Ord,
     G: Guard<D> + Default,
@@ -315,11 +346,13 @@ where
             .collect();
         for s in system.transitions.keys() {
             for t in system.transitions(s) {
-                graph.add_edge(
-                    *nodes.get(&t.from.id).unwrap(),
-                    *nodes.get(&t.to.id).unwrap(),
-                    t,
-                );
+                for (g, to) in t.switch.variants() {
+                    graph.add_edge(
+                        *nodes.get(&t.from.id).unwrap(),
+                        *nodes.get(&to.id).unwrap(),
+                        t.label.clone(),
+                    );
+                }
             }
         }
         graph
