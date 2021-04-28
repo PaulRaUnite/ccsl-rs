@@ -182,10 +182,7 @@ impl<C: fmt::Display> fmt::Display for ClockLabel<'_, C> {
 }
 
 #[derive(Debug, Clone)]
-pub struct LabeledTransitionSystem<C, D, G>
-where
-    G: Guard<D>,
-{
+pub struct LabeledTransitionSystem<C, D, G> {
     name: String,
     states: BTreeSet<State<G>>,
     clocks: BTreeSet<C>,
@@ -369,11 +366,11 @@ mod macros {
     #[macro_export]
     macro_rules! trigger_value {
         ($container:ident, !$e:expr, $($tail:tt)*) => {
-            $container.push(($e, false));
+            $container.push(((&$e).clone(), false));
             trigger_value!($container, $($tail)*)
         };
         ($container:ident, $e:expr, $($tail:tt)*) => {
-            $container.push(($e, true));
+            $container.push(((&$e).clone(), true));
             trigger_value!($container, $($tail)*)
         };
         ($container:ident,) => {}

@@ -1,29 +1,30 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::iter::once;
 
+use derive_more::From;
 use itertools::Itertools;
 
-use crate::lccsl::automata::{Delta, State, STS};
+use crate::lccsl::automata::{Delta, LabeledTransitionSystem, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
-use std::convert::TryFrom;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Coincidence<C> {
     pub left: C,
     pub right: C,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Alternates<C> {
     pub left: C,
     pub right: C,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Causality<C> {
     pub left: C,
     pub right: C,
@@ -31,7 +32,7 @@ pub struct Causality<C> {
     pub max: Option<usize>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Precedence<C> {
     pub left: C,
     pub right: C,
@@ -39,42 +40,42 @@ pub struct Precedence<C> {
     pub max: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Exclusion<C> {
-    pub clocks: HashSet<C>,
+    pub clocks: BTreeSet<C>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Subclocking<C> {
     pub left: C,
     pub right: C,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Union<C> {
     pub out: C,
-    pub args: HashSet<C>,
+    pub args: BTreeSet<C>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Intersection<C> {
     pub out: C,
-    pub args: HashSet<C>,
+    pub args: BTreeSet<C>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Infinity<C> {
     pub out: C,
-    pub args: HashSet<C>,
+    pub args: BTreeSet<C>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Supremum<C> {
     pub out: C,
-    pub args: HashSet<C>,
+    pub args: BTreeSet<C>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Repeat<C> {
     pub out: C,
     pub every: Option<usize>,
@@ -83,7 +84,7 @@ pub struct Repeat<C> {
     pub up_to: Option<usize>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Filter<C> {
     pub out: C,
     pub base: C,
@@ -91,7 +92,7 @@ pub struct Filter<C> {
     pub from: usize,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Delay<C> {
     pub out: C,
     pub base: C,
@@ -99,14 +100,14 @@ pub struct Delay<C> {
     pub on: Option<C>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct SampleOn<C> {
     pub out: C,
     pub base: C,
     pub on: Option<C>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Diff<C> {
     pub out: C,
     pub base: C,
@@ -114,21 +115,57 @@ pub struct Diff<C> {
     pub up_to: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Minus<C> {
     pub out: C,
     pub base: C,
-    pub args: HashSet<C>,
+    pub args: BTreeSet<C>,
+}
+
+#[derive(Debug, Clone, From, Hash)]
+pub enum Constraint<C> {
+    Causality(Causality<C>),
+    Precedence(Precedence<C>),
+    SubClock(Subclocking<C>),
+    Exclusion(Exclusion<C>),
+    Infinity(Infinity<C>),
+    Supremum(Supremum<C>),
+    Union(Union<C>),
+    Intersection(Intersection<C>),
+    Minus(Minus<C>),
+    Repeat(Repeat<C>),
+    Delay(Delay<C>),
+}
+
+impl<C> From<Constraint<C>> for STS<C>
+where
+    C: Hash + Clone + Ord + fmt::Display,
+{
+    fn from(c: Constraint<C>) -> Self {
+        match c {
+            Constraint::Causality(c) => c.into(),
+            Constraint::Precedence(c) => c.into(),
+            Constraint::SubClock(c) => c.into(),
+            Constraint::Exclusion(c) => c.into(),
+            Constraint::Infinity(c) => c.into(),
+            Constraint::Supremum(c) => c.into(),
+            Constraint::Union(c) => c.into(),
+            Constraint::Intersection(c) => c.into(),
+            Constraint::Minus(c) => c.into(),
+            Constraint::Repeat(c) => c.into(),
+            Constraint::Delay(c) => c.into(),
+        }
+    }
 }
 
 impl<C> From<Coincidence<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Coincidence<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.left, c.right));
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let state = State::new(0).with_invariant(var.eq(0));
-        let mut system = STS::new(c, state.clone());
+        let mut system = STS::new(&c, state.clone());
         tr!(system, &state => &state, {c.left, c.right,});
         tr!(system, &state => &state, {!c.left, !c.right,});
 
@@ -138,13 +175,13 @@ where
 
 impl<C> From<Alternates<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Alternates<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.left, c.right));
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let alt = State::new(1).with_invariant(var.eq(1));
-        let mut system = STS::new(c, start.clone());
+        let mut system = STS::new(&c, start.clone());
 
         tr!(system, &start => &alt, {c.left, !c.right,});
         tr!(system, &start => &start, {!c.left, !c.right,});
@@ -157,15 +194,15 @@ where
 
 impl<C> From<Causality<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Causality<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
         let mut system: STS<C> = Precedence {
-            left: c.left,
-            right: c.right,
+            left: c.left.clone(),
+            right: c.right.clone(),
             init: None,
             max: None,
         }
@@ -178,17 +215,17 @@ where
 
 impl<C> From<Precedence<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Precedence<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
-        let var = IntegerExpression::var(Delta(c.left, c.right));
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
 
         let start = State::new(0).with_invariant(var.eq(0));
         let next = State::new(1).with_invariant(var.more(0));
-        let mut system = STS::new(c, start.clone());
+        let mut system = STS::new(&c, start.clone());
         tr!(system, &start => &next, {c.left, !c.right,});
 
         tr!(system, &next => &next, {c.left, !c.right,});
@@ -205,7 +242,7 @@ where
 
 impl<C> From<Exclusion<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Exclusion<C>) -> Self {
         let start = State::new(0);
@@ -221,12 +258,12 @@ where
 
 impl<C> From<Subclocking<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Subclocking<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.right, c.left));
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
-        let mut system = STS::new(c, start.clone());
+        let mut system = STS::new(&c, start.clone());
 
         tr!(system, &start => &start, {c.left,});
         tr!(system, &start => &start, {c.left, c.right,});
@@ -237,12 +274,12 @@ where
 
 impl<C> From<Union<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Union<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
         for clock in c.args.iter() {
-            let var = IntegerExpression::var(Delta(c.out, clock.clone()));
+            let var = IntegerExpression::var(Delta(c.out.clone(), clock.clone()));
             invariant = invariant & var.more_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
@@ -267,12 +304,12 @@ where
 
 impl<C> From<Intersection<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Intersection<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
         for clock in c.args.iter() {
-            let var = IntegerExpression::var(Delta(c.out, clock.clone()));
+            let var = IntegerExpression::var(Delta(c.out.clone(), clock.clone()));
             invariant = invariant & var.less_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
@@ -293,10 +330,10 @@ where
 }
 impl<C> From<Delay<C>> for STS<C>
 where
-    C: Copy + Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Delay<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.base, c.out));
+        let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let mut system = STS::new(&c, start.clone());
 
@@ -310,6 +347,42 @@ where
         tr!(system, &last => &last, {c.out, c.base,});
         tr!(system, &start => &start, {});
         system
+    }
+}
+
+impl<C> From<Infinity<C>> for STS<C> {
+    fn from(_: Infinity<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<Supremum<C>> for STS<C> {
+    fn from(_: Supremum<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<Minus<C>> for STS<C> {
+    fn from(_: Minus<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<Diff<C>> for STS<C> {
+    fn from(_: Diff<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<SampleOn<C>> for STS<C> {
+    fn from(_: SampleOn<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<Filter<C>> for STS<C> {
+    fn from(_: Filter<C>) -> Self {
+        todo!()
+    }
+}
+impl<C> From<Repeat<C>> for STS<C> {
+    fn from(_: Repeat<C>) -> Self {
+        todo!()
     }
 }
 

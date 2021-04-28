@@ -16,21 +16,6 @@ pub fn parse_raw(input: &str) -> Result<Pairs<Rule>, pest::error::Error<Rule>> {
 }
 
 #[derive(Debug)]
-pub enum Constraint<C: Eq + Debug> {
-    Causality(Causality<C>),
-    Precedence(Precedence<C>),
-    SubClock(Subclocking<C>),
-    Exclusion(Exclusion<C>),
-    Infinity(Infinity<C>),
-    Supremum(Supremum<C>),
-    Union(Union<C>),
-    Intersection(Intersection<C>),
-    Minus(Minus<C>),
-    Repeat(Repeat<C>),
-    Delay(Delay<C>),
-}
-
-#[derive(Debug)]
 pub struct Specification<C: Eq + Debug> {
     pub clocks: HashSet<C>,
     pub constraints: Vec<Constraint<C>>,

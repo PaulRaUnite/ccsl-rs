@@ -8,18 +8,7 @@ use crate::lccsl::automata::{ClockLabel, Delta, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
 use petgraph::prelude::NodeIndex;
 
-pub fn unfold_specification<C>(spec: &[STS<C>], trim: bool) -> Vec<Graph<String, ClockLabel<C>>>
-where
-    C: Ord + Hash + Clone,
-{
-    spec.iter()
-        .map(|sts| sts.states().iter())
-        .multi_cartesian_product()
-        .map(|comb| unfold_state_combination(spec, &comb, trim))
-        .collect()
-}
-
-fn unfold_state_combination<'a, 'b, C>(
+pub fn unfold_specification<'a, 'b, C>(
     spec: &'a [STS<C>],
     comb: &'b [&'a State<BooleanExpression<Delta<C>>>],
     trim: bool,

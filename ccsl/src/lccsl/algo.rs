@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 use itertools::Itertools;
 use petgraph::prelude::EdgeRef;
@@ -9,23 +9,15 @@ use petgraph::{Direction, Graph};
 
 use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, MergedTransition, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
-
-pub fn conflict<C: Eq + Hash>(m1: &HashMap<&C, bool>, m2: &HashMap<&C, bool>) -> bool {
-    for (c, b) in m1 {
-        if m2.get(c).map_or(false, |v| v ^ b) {
-            return true;
-        }
-    }
-    false
-}
+use std::collections::hash_map::DefaultHasher;
 
 #[derive(Debug, Copy, Clone)]
-pub struct ConflictRatio {
+pub struct ConflictEffect {
     pub solutions: usize,
     pub all: usize,
 }
 
-impl fmt::Display for ConflictRatio {
+impl fmt::Display for ConflictEffect {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.solutions, self.all)
     }
@@ -43,21 +35,10 @@ impl fmt::Display for ConflictSource {
     }
 }
 
-pub fn conflict_map_combinations<C>(spec: &[STS<C>]) -> Vec<Graph<ConflictSource, ConflictRatio>>
-where
-    C: Ord + Hash + Clone,
-{
-    spec.iter()
-        .map(|sts| sts.states().iter())
-        .multi_cartesian_product()
-        .map(|comb: Vec<&State<BooleanExpression<Delta<C>>>>| conflict_map(spec, &comb))
-        .collect()
-}
-
-fn conflict_map<'a, C>(
+pub fn conflict_map<'a, C>(
     spec: &'a [STS<C>],
     comb: &[&State<BooleanExpression<Delta<C>>>],
-) -> Graph<ConflictSource, ConflictRatio>
+) -> Graph<ConflictSource, ConflictEffect>
 where
     C: Clone + Hash + Ord,
 {
@@ -92,7 +73,7 @@ where
             g.add_edge(
                 n1,
                 n2,
-                ConflictRatio {
+                ConflictEffect {
                     solutions,
                     all: sol_len2,
                 },
@@ -100,7 +81,7 @@ where
             g.add_edge(
                 n2,
                 n1,
-                ConflictRatio {
+                ConflictEffect {
                     solutions,
                     all: sol_len1,
                 },
@@ -151,7 +132,7 @@ impl CountingVisitor {
     }
 }
 
-impl<C: fmt::Debug> Visitor<C> for CountingVisitor {
+impl<C> Visitor<C> for CountingVisitor {
     fn test(&mut self) {
         self.test += 1;
     }
@@ -259,7 +240,7 @@ impl fmt::Display for Approximation {
     }
 }
 
-pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Approximation {
+pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictEffect>) -> Approximation {
     if g.node_count() == 0 {
         return Approximation::default();
     }
@@ -297,22 +278,23 @@ pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictRatio>) -> Appro
     aprox
 }
 
-pub fn compare_approx_and_solutions<C>(
+pub fn generate_combinations<C>(
     spec: &[STS<C>],
-) -> Vec<(usize, CountingVisitor, Approximation)>
+) -> impl Iterator<Item = Vec<&State<BooleanExpression<Delta<C>>>>>
 where
-    C: Ord + Hash + Clone + Debug,
+    C: Ord + Hash + Clone,
 {
     spec.iter()
         .map(|sts| sts.states().iter())
         .multi_cartesian_product()
-        .map(|comb: Vec<&State<BooleanExpression<Delta<C>>>>| {
-            let mut visitor = CountingVisitor::new();
-            (
-                find_solutions(spec, &comb, Some(&mut visitor)),
-                visitor,
-                approximate_complexity(&conflict_map(spec, &comb)),
-            )
-        })
-        .collect()
+}
+
+pub fn combination_identifier<C, G>(hashes: &[u64], comb: &[&State<G>]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hashes
+        .iter()
+        .zip(comb.iter())
+        .collect::<BTreeMap<_, _>>()
+        .hash(&mut hasher);
+    hasher.finish()
 }
