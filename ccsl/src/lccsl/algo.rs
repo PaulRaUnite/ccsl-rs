@@ -65,7 +65,6 @@ where
         .collect();
     for (_, constraints) in index.into_iter() {
         for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
-            let solutions = count_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
             let n1 = nodes[i1];
             let n2 = nodes[i2];
             let sol_len1 = c1.transitions_len(comb[i1]);
@@ -74,7 +73,7 @@ where
                 n1,
                 n2,
                 ConflictEffect {
-                    solutions,
+                    solutions: count_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2])),
                     all: sol_len2,
                 },
             );
@@ -82,7 +81,7 @@ where
                 n2,
                 n1,
                 ConflictEffect {
-                    solutions,
+                    solutions: count_solutions(c2.transitions(comb[i2]), c1.transitions(comb[i1])),
                     all: sol_len1,
                 },
             );

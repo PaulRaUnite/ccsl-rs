@@ -11,3 +11,6 @@ ccsl={path="../ccsl"}
 structopt = "0.3"
 petgraph = "0.5"
 itertools = "0.10"
+
+[build]
+rustflags = ["-C", "target-cpu=native"]

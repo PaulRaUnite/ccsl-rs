@@ -158,9 +158,10 @@ mod tests {
         };
 
         assert_eq!(lab1.has_conflict(&lab2), false);
+        assert_eq!(lab2.has_conflict(&lab1), false);
     }
     #[test]
-    fn conflicts2() {
+    fn conflict_with_map() {
         let m = HashMap::from_iter(vec![("a", true), ("b", false)]);
         let c2 = BTreeSet::from_iter(vec!["b", "c"]);
 
@@ -171,7 +172,31 @@ mod tests {
             clocks: &c2,
         };
 
-        assert_eq!(lab2.has_conflict_with_map(&m), true);
+        assert_eq!(lab2.has_conflict_with_map(&m), false);
+        assert_eq!(
+            lab2.has_conflict_with_map(&HashMap::from_iter(vec![("a", true), ("b", true)])),
+            true
+        );
+    }
+    #[test]
+    fn conflict_with_empty() {
+        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
+
+        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let v2 = BTreeSet::from_iter(vec![]);
+
+        let lab1 = ClockLabel {
+            present: &v1,
+            clocks: &c1,
+        };
+        let lab2 = ClockLabel {
+            present: &v2,
+            clocks: &c2,
+        };
+
+        assert_eq!(lab1.has_conflict(&lab2), true);
+        assert_eq!(lab2.has_conflict(&lab1), true);
     }
 }
 
