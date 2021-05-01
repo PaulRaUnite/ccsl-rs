@@ -198,6 +198,27 @@ mod tests {
         assert_eq!(lab1.has_conflict(&lab2), true);
         assert_eq!(lab2.has_conflict(&lab1), true);
     }
+
+    #[test]
+    fn conflict_no_common_clocks() {
+        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let c2 = BTreeSet::from_iter(vec!["c", "d"]);
+
+        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
+        let v2 = BTreeSet::from_iter(vec!["c", "d"]);
+
+        let lab1 = ClockLabel {
+            present: &v1,
+            clocks: &c1,
+        };
+        let lab2 = ClockLabel {
+            present: &v2,
+            clocks: &c2,
+        };
+
+        assert_eq!(lab1.has_conflict(&lab2), false);
+        assert_eq!(lab2.has_conflict(&lab1), false);
+    }
 }
 
 impl<C: fmt::Display> fmt::Display for ClockLabel<'_, C> {
