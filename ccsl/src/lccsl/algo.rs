@@ -110,9 +110,9 @@ where
 }
 
 pub struct CountingVisitor {
-    test: usize,
-    down: usize,
-    solutions: usize,
+    pub test: usize,
+    pub down: usize,
+    pub solutions: usize,
 }
 
 pub trait Visitor<C> {

@@ -1,4 +1,7 @@
 extern crate itertools;
+extern crate serde;
+
+use serde::Serialize;
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -37,7 +40,17 @@ fn write_graph<N: Display, E: Display>(
     Ok(())
 }
 
-pub struct Analysis {}
+#[derive(Debug, Copy, Clone, Serialize)]
+pub struct ApproximationAnalysis {
+    pub spec: u64,
+    pub comb: u64,
+    pub test: usize,
+    pub down: usize,
+    pub solutions: usize,
+    pub limit_test: usize,
+    pub limit_down: usize,
+    pub limit_solutions: usize,
+}
 
 fn hash(h: impl Hash) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -45,7 +58,10 @@ fn hash(h: impl Hash) -> u64 {
     hasher.finish()
 }
 
-pub fn analyze_specification<C, I>(dir: &Path, spec: I) -> Result<(), Box<dyn Error>>
+pub fn analyze_specification<C, I>(
+    dir: &Path,
+    spec: I,
+) -> Result<Vec<ApproximationAnalysis>, Box<dyn Error>>
 where
     C: Hash + Clone + Ord + fmt::Display + fmt::Debug,
     I: IntoIterator<Item = Constraint<C>>,
@@ -65,9 +81,10 @@ where
 
     let spec: Vec<STS<C>> = spec.into_iter().map(Into::into).collect();
 
-    println!("Comparison of combinations");
+    let mut analytics = Vec::with_capacity(spec.iter().map(|c| c.states().len()).product());
     for comb in generate_combinations(&spec) {
-        let id = combination_identifier::<C, _>(&hashes, &comb).to_string();
+        let comb_hash = combination_identifier::<C, _>(&hashes, &comb);
+        let id = comb_hash.to_string();
         let full_tree = unfold_specification(&spec, &comb, true);
         write_graph(&full_tree, &tree_full_dir, &id)?;
         let trimmed_tree = unfold_specification(&spec, &comb, false);
@@ -77,7 +94,16 @@ where
         let mut visitor = CountingVisitor::new();
         let actual = find_solutions(&spec, &comb, Some(&mut visitor));
         let approx = approximate_complexity(&dep_map);
-        println!("{} {} <=> {}", actual, visitor, approx);
+        analytics.push(ApproximationAnalysis {
+            spec: spec_hash,
+            comb: comb_hash,
+            test: visitor.test,
+            down: visitor.down,
+            solutions: actual,
+            limit_test: approx.tests,
+            limit_down: approx.downs,
+            limit_solutions: approx.solutions,
+        });
     }
 
     let squish_dir = dir.join("squish");
@@ -90,12 +116,12 @@ where
         .unwrap();
     let dep_map = conflict_map(&spec, &comb);
     write_graph(&dep_map, &squish_dir, "conflict_map")?;
-    let mut visitor = CountingVisitor::new();
-    let actual = find_solutions(&spec, &comb, Some(&mut visitor));
-    let approx = approximate_complexity(&dep_map);
-    println!("Averaged {} {} <=> {}", actual, visitor, approx);
+    // let mut visitor = CountingVisitor::new();
+    // let actual = find_solutions(&spec, &comb, Some(&mut visitor));
+    // let approx = approximate_complexity(&dep_map);
+    // println!("Averaged {} {} <=> {}", actual, visitor, approx);
 
-    Ok(())
+    Ok(analytics)
 }
 
 macro_rules! collection {

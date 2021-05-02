@@ -1,3 +1,4 @@
+extern crate csv;
 extern crate itertools;
 
 use std::error::Error;
@@ -5,8 +6,10 @@ use std::path::PathBuf;
 
 use structopt::StructOpt;
 
-use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::constraints::{Constraint, Delay, Precedence};
+use itertools::Itertools;
+use std::fs::File;
+use std::io::BufWriter;
 use tool::{all_constraints, analyze_specification};
 
 #[derive(StructOpt, Debug)]
@@ -85,9 +88,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         .into(),
     ];
+    let mut wtr = csv::Writer::from_writer(BufWriter::new(File::create(
+        "/home/paulra/Code/ccsl-rs/plotter/data.csv",
+    )?));
+    let len = spec.len();
+    for perm in spec.into_iter().permutations(len) {
+        let analysis = analyze_specification(&opt.dir.join("spec"), perm)?;
+        for el in analysis {
+            wtr.serialize(el)?;
+        }
+    }
 
-    analyze_specification(&opt.dir.join("spec"), spec)?;
-
+    wtr.flush()?;
     // for name in names {
     //     Command::new("dot")
     //         .arg("-O")

@@ -11,6 +11,8 @@ ccsl={path="../ccsl"}
 structopt = "0.3"
 petgraph = "0.5"
 itertools = "0.10"
+serde = { version = "1", features = ["derive"] }
+csv = "1.1"
 
 [build]
 rustflags = ["-C", "target-cpu=native"]
