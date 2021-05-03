@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 use ccsl::lccsl::constraints::{Constraint, Delay, Precedence};
+use ccsl::lccsl::gen::circle_spec;
 use itertools::Itertools;
 use std::fs::File;
 use std::io::BufWriter;
@@ -56,50 +57,30 @@ struct Opt {
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
 
-    all_constraints(&opt.dir.join("constraints"))?;
+    // all_constraints(&opt.dir.join("constraints"))?;
 
-    let spec: Vec<Constraint<&str>> = vec![
-        Precedence {
-            left: "a",
-            right: "b",
-            init: None,
-            max: None,
-        }
-        .into(),
-        Precedence {
-            left: "b",
-            right: "c",
-            init: None,
-            max: None,
-        }
-        .into(),
-        Precedence {
-            left: "c",
-            right: "d",
-            init: None,
-            max: None,
-        }
-        .into(),
-        Delay {
-            out: "d",
-            base: "a",
-            delay: 1,
-            on: None,
-        }
-        .into(),
-    ];
-    let mut wtr = csv::Writer::from_writer(BufWriter::new(File::create(
+    let mut raw_wrt = csv::Writer::from_writer(BufWriter::new(File::create(
         "/home/paulra/Code/ccsl-rs/plotter/data.csv",
     )?));
-    let len = spec.len();
-    for perm in spec.into_iter().permutations(len) {
-        let analysis = analyze_specification(&opt.dir.join("spec"), perm)?;
-        for el in analysis {
-            wtr.serialize(el)?;
+    let mut squished_wrt = csv::Writer::from_writer(BufWriter::new(File::create(
+        "/home/paulra/Code/ccsl-rs/plotter/squished.csv",
+    )?));
+    for size in 3..=8 {
+        let spec = circle_spec(size).unwrap();
+        let len = spec.len();
+        let permutations_amount: usize = (1..=len).product();
+        println!("step: {}/8 ({})", size, permutations_amount);
+        for perm in spec.into_iter().permutations(len) {
+            let (analysis, squished) = analyze_specification(&opt.dir.join("spec"), perm)?;
+            for el in analysis {
+                raw_wrt.serialize(el)?;
+            }
+            squished_wrt.serialize(squished)?;
         }
     }
 
-    wtr.flush()?;
+    raw_wrt.flush()?;
+    squished_wrt.flush()?;
     // for name in names {
     //     Command::new("dot")
     //         .arg("-O")

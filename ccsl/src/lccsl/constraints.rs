@@ -157,6 +157,24 @@ where
         }
     }
 }
+//
+// impl<C> Constraint<C> {
+//     pub fn rank(&self) -> usize {
+//         match self {
+//             Constraint::Causality(_) => {}
+//             Constraint::Precedence(_) => {}
+//             Constraint::SubClock(_) => {}
+//             Constraint::Exclusion(_) => {}
+//             Constraint::Infinity(_) => {}
+//             Constraint::Supremum(_) => {}
+//             Constraint::Union(_) => {}
+//             Constraint::Intersection(_) => {}
+//             Constraint::Minus(_) => {}
+//             Constraint::Repeat(_) => {}
+//             Constraint::Delay(_) => {}
+//         }
+//     }
+// }
 
 impl<C> From<Coincidence<C>> for STS<C>
 where

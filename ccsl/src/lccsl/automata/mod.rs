@@ -10,6 +10,7 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::Index;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub trait Guard<D> {
     fn eval<'a>(&'a self, state: &'a dyn Index<&'a D, Output = i64>) -> bool;
@@ -24,15 +25,12 @@ impl<C: fmt::Display> fmt::Display for Delta<C> {
     }
 }
 #[derive(Debug)]
-pub struct State<G>
-where
-    G: ?Sized,
-{
+pub struct State<G> {
     pub id: usize,
-    pub invariant: Option<Rc<G>>,
+    pub invariant: Option<Arc<G>>,
 }
 
-impl<G: ?Sized> Clone for State<G> {
+impl<G> Clone for State<G> {
     fn clone(&self) -> Self {
         Self {
             id: self.id.clone(),
@@ -88,7 +86,7 @@ impl<G> State<G> {
     pub fn with_invariant(self, guard: G) -> Self {
         Self {
             id: self.id,
-            invariant: Some(Rc::new(guard)),
+            invariant: Some(Arc::new(guard)),
         }
     }
 }

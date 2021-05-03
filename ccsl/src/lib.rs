@@ -53,4 +53,6 @@ pub mod lccsl {
     pub mod algo;
 
     pub mod vizualization;
+
+    pub mod gen;
 }

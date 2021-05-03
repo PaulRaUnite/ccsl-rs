@@ -9,15 +9,16 @@ use petgraph::{Direction, Graph};
 
 use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, MergedTransition, State, STS};
 use crate::lccsl::expressions::BooleanExpression;
+use num::rational::Ratio;
 use std::collections::hash_map::DefaultHasher;
 
 #[derive(Debug, Copy, Clone)]
-pub struct ConflictEffect {
-    pub solutions: usize,
+pub struct ConflictEffect<R> {
+    pub solutions: R,
     pub all: usize,
 }
 
-impl fmt::Display for ConflictEffect {
+impl<R: fmt::Display> fmt::Display for ConflictEffect<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.solutions, self.all)
     }
@@ -35,10 +36,66 @@ impl fmt::Display for ConflictSource {
     }
 }
 
-pub fn conflict_map<'a, C>(
+pub fn approx_conflict_map<'a, C>(
     spec: &'a [STS<C>],
     comb: &[&State<BooleanExpression<Delta<C>>>],
-) -> Graph<ConflictSource, ConflictEffect>
+) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
+where
+    C: Clone + Hash + Ord,
+{
+    let mut index: HashMap<&C, Vec<(usize, &STS<C>)>> = HashMap::new();
+    for (i, constraint) in spec.iter().enumerate() {
+        for clock in constraint.clocks() {
+            index
+                .entry(clock)
+                .or_insert_with(|| vec![])
+                .push((i, constraint));
+        }
+    }
+
+    let mut g = Graph::new();
+    let nodes: Vec<_> = spec
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            g.add_node(ConflictSource {
+                name: (&c).to_string(),
+                transitions: c.transitions_len(comb[i]),
+            })
+        })
+        .collect();
+    for (_, constraints) in index.into_iter() {
+        for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
+            let n1 = nodes[i1];
+            let n2 = nodes[i2];
+            let sol_len1 = c1.transitions_len(comb[i1]);
+            let sol_len2 = c2.transitions_len(comb[i2]);
+            let approx = approx_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
+            g.add_edge(
+                n1,
+                n2,
+                ConflictEffect {
+                    solutions: Ratio::new(approx, sol_len1),
+                    all: sol_len2,
+                },
+            );
+            g.add_edge(
+                n2,
+                n1,
+                ConflictEffect {
+                    solutions: Ratio::new(approx, sol_len2),
+                    all: sol_len1,
+                },
+            );
+        }
+    }
+    g
+}
+
+pub fn limit_conflict_map<'a, C>(
+    spec: &'a [STS<C>],
+    comb: &[&State<BooleanExpression<Delta<C>>>],
+) -> Graph<ConflictSource, ConflictEffect<usize>>
 where
     C: Clone + Hash + Ord,
 {
@@ -73,7 +130,7 @@ where
                 n1,
                 n2,
                 ConflictEffect {
-                    solutions: count_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2])),
+                    solutions: limit_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2])),
                     all: sol_len2,
                 },
             );
@@ -81,7 +138,7 @@ where
                 n2,
                 n1,
                 ConflictEffect {
-                    solutions: count_solutions(c2.transitions(comb[i2]), c1.transitions(comb[i1])),
+                    solutions: limit_solutions(c2.transitions(comb[i2]), c1.transitions(comb[i1])),
                     all: sol_len1,
                 },
             );
@@ -90,7 +147,7 @@ where
     g
 }
 
-fn count_solutions<'a, C, G>(
+fn limit_solutions<'a, C, G>(
     m1: impl Iterator<Item = MergedTransition<'a, C, G>>,
     m2: impl Iterator<Item = MergedTransition<'a, C, G>> + Clone,
 ) -> usize
@@ -107,6 +164,23 @@ where
         })
         .max()
         .unwrap_or(0)
+}
+fn approx_solutions<'a, C, G>(
+    m1: impl Iterator<Item = MergedTransition<'a, C, G>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C, G>> + Clone,
+) -> usize
+where
+    C: Eq + Hash + Clone + Ord + 'a,
+    G: Clone + 'a,
+{
+    m1.into_iter()
+        .map(|x| {
+            m2.clone()
+                .into_iter()
+                .map(move |y| if x.label.has_conflict(&y.label) { 0 } else { 1 })
+                .sum::<usize>()
+        })
+        .sum()
 }
 
 pub struct CountingVisitor {
@@ -226,32 +300,40 @@ where
 }
 
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Approximation {
-    pub solutions: usize,
+pub struct Complexity<R> {
+    pub solutions: R,
     pub all: usize,
-    pub downs: usize,
-    pub tests: usize,
+    pub downs: R,
+    pub tests: R,
 }
 
-impl fmt::Display for Approximation {
+impl<R: fmt::Debug> fmt::Display for Complexity<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictEffect>) -> Approximation {
+pub fn complexity_by_graph<R>(g: &Graph<ConflictSource, ConflictEffect<R>>) -> Complexity<R>
+where
+    R: num::Num + Copy + Clone + From<usize> + Ord,
+{
     if g.node_count() == 0 {
-        return Approximation::default();
+        return Complexity::<R> {
+            solutions: R::zero(),
+            all: 0,
+            downs: R::zero(),
+            tests: R::zero(),
+        };
     }
     let mut selected: HashSet<_> = HashSet::new();
-    let mut aprox = Approximation {
-        solutions: 1,
+    let mut aprox = Complexity::<R> {
+        solutions: R::one(),
         all: 1,
-        downs: 0,
-        tests: 0,
+        downs: R::zero(),
+        tests: R::zero(),
     };
     for to in g.node_indices() {
-        let (solution, all) = g
+        let (solution, all): (R, usize) = g
             .edges_directed(to, Direction::Incoming)
             .filter_map(|e| {
                 if selected.contains(&e.source()) {
@@ -266,11 +348,11 @@ pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictEffect>) -> Appr
             .min_by_key(|(s, _)| *s)
             .unwrap_or_else(|| {
                 let t = g.node_weight(to).unwrap().transitions;
-                (aprox.solutions * t, aprox.all * t)
+                (aprox.solutions * t.into(), aprox.all * t)
             });
         selected.insert(to);
-        aprox.downs += solution;
-        aprox.tests += aprox.solutions * g.node_weight(to).unwrap().transitions;
+        aprox.downs = aprox.downs + solution;
+        aprox.tests = aprox.tests + aprox.solutions * g.node_weight(to).unwrap().transitions.into();
         aprox.solutions = solution;
         aprox.all = all;
     }
@@ -279,9 +361,9 @@ pub fn approximate_complexity(g: &Graph<ConflictSource, ConflictEffect>) -> Appr
 
 pub fn generate_combinations<C>(
     spec: &[STS<C>],
-) -> impl Iterator<Item = Vec<&State<BooleanExpression<Delta<C>>>>>
+) -> impl Iterator<Item = Vec<&State<BooleanExpression<Delta<C>>>>> + Send
 where
-    C: Ord + Hash + Clone,
+    C: Ord + Hash + Clone + Send + Sync,
 {
     spec.iter()
         .map(|sts| sts.states().iter())

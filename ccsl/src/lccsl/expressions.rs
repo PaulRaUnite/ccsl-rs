@@ -2,7 +2,7 @@ use crate::lccsl::automata::Guard;
 use std::fmt;
 use std::fmt::Formatter;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Index, Mul, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone)]
 pub enum IntegerArithmeticsKind {
@@ -18,8 +18,8 @@ pub enum IntegerExpression<Idx> {
     Constant(i64),
     IntegerBinary {
         kind: IntegerArithmeticsKind,
-        left: Rc<IntegerExpression<Idx>>,
-        right: Rc<IntegerExpression<Idx>>,
+        left: Arc<IntegerExpression<Idx>>,
+        right: Arc<IntegerExpression<Idx>>,
     },
 }
 
@@ -46,8 +46,8 @@ impl<D> Add for IntegerExpression<D> {
     fn add(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Add,
-            left: Rc::new(self),
-            right: Rc::new(rhs),
+            left: Arc::new(self),
+            right: Arc::new(rhs),
         }
     }
 }
@@ -58,8 +58,8 @@ impl<D> Sub for IntegerExpression<D> {
     fn sub(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Sub,
-            left: Rc::new(self),
-            right: Rc::new(rhs),
+            left: Arc::new(self),
+            right: Arc::new(rhs),
         }
     }
 }
@@ -70,8 +70,8 @@ impl<D> Mul for IntegerExpression<D> {
     fn mul(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Mul,
-            left: Rc::new(self),
-            right: Rc::new(rhs),
+            left: Arc::new(self),
+            right: Arc::new(rhs),
         }
     }
 }
