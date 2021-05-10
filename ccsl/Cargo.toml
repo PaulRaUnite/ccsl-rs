@@ -13,6 +13,8 @@ thiserror = "1.0"
 petgraph = "0.5"
 itertools = "0.10"
 num = "0.4"
+rand = "0.8"
+permutation = "0.2.5"
 
 [dependencies.derive_more]
 version = "0.99"

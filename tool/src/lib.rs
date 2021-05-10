@@ -27,100 +27,118 @@ use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
 };
+use ccsl::lccsl::opti::optimize_spec;
 use itertools::Itertools;
+use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
 use petgraph::Graph;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-fn write_graph<N: Display, E: Display>(
+pub fn write_graph<N: Display, E: Display>(
     g: &Graph<N, E>,
     dir: &Path,
     file: &str,
 ) -> Result<(), Box<dyn Error>> {
     create_dir_all(dir)?;
     let mut file = BufWriter::new(File::create(dir.join(file).with_extension("dot"))?);
-    let dot = Dot::new(g);
+    let dot = Dot::with_config(g, &[EdgeNoLabel]);
     writeln!(&mut file, "{}", &dot)?;
+    Ok(())
+}
+
+pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug>(
+    g: &Graph<N, E>,
+    dir: &Path,
+    file: &str,
+) -> Result<(), Box<dyn Error>> {
+    create_dir_all(dir)?;
+    let mut file = BufWriter::new(File::create(dir.join(file).with_extension("dot"))?);
+    let dot = Dot::with_config(g, &[NodeNoLabel, EdgeNoLabel]);
+    writeln!(&mut file, "{:?}", &dot)?;
     Ok(())
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct SpecCombParams {
     pub spec: u64,
+    pub variant: u64,
     pub comb: u64,
-    pub test: usize,
-    pub down: usize,
-    pub solutions: usize,
-    pub limit_test: usize,
-    pub limit_down: usize,
-    pub limit_solutions: usize,
+    pub real: Criteria,
+    pub limit: Criteria,
+    pub approx: Criteria,
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct SquishedParams {
     pub spec: u64,
-    pub limit_test: usize,
-    pub limit_down: usize,
-    pub limit_solutions: usize,
-    pub approx_test: usize,
-    pub approx_down: usize,
-    pub approx_solutions: usize,
+    pub variant: u64,
+    pub limit: Criteria,
+    pub approx: Criteria,
 }
 
-fn hash(h: impl Hash) -> u64 {
+#[derive(Debug, Copy, Clone, Serialize)]
+pub struct Criteria {
+    pub test: usize,
+    pub down: usize,
+    pub solutions: usize,
+}
+
+pub fn hash(h: impl Hash) -> u64 {
     let mut hasher = DefaultHasher::new();
     h.hash(&mut hasher);
     hasher.finish()
 }
 
-pub fn analyze_specification<C, I>(
-    dir: &Path,
-    spec: I,
-) -> Result<(Vec<SpecCombParams>, SquishedParams), Box<dyn Error>>
-where
-    C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Send + Sync,
-    I: IntoIterator<Item = Constraint<C>>,
-    for<'a> &'a I: IntoIterator<Item = &'a Constraint<C>>,
-{
-    let hashes = (&spec)
+pub fn hash_spec<'a, C: 'a + Hash>(spec: impl IntoIterator<Item = &'a Constraint<C>>) -> u64 {
+    let hashes = spec
         .into_iter()
         .map(|c: &Constraint<C>| hash(c))
         .collect_vec();
+    hash(&hashes)
+}
 
+pub fn analyze_specification<C>(
+    spec: Vec<STS<C>>,
+    original_hash: u64,
+    hashes: &[u64],
+) -> Result<(Vec<SpecCombParams>, SquishedParams), Box<dyn Error>>
+where
+    C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Send + Sync,
+{
     let spec_hash = hash(&hashes);
-
-    // let dir = dir.join(spec_hash.to_string());
-    // let tree_full_dir = dir.join("tree/full");
-    // let tree_trimmed_dir = dir.join("tree/trimmed");
-    // let map_dir = dir.join("map");
-
-    let spec: Vec<STS<C>> = spec.into_iter().map(Into::into).collect();
 
     let mut analytics = Vec::with_capacity(spec.iter().map(|c| c.states().len()).product());
     analytics.par_extend(generate_combinations(&spec).par_bridge().map(|comb| {
         let comb_hash = combination_identifier::<C, _>(&hashes, &comb);
-        // let id = comb_hash.to_string();
-        // let full_tree = unfold_specification(&spec, &comb, true);
-        // let trimmed_tree = unfold_specification(&spec, &comb, false);
-        let dep_map = limit_conflict_map(&spec, &comb);
         let mut visitor = CountingVisitor::new();
         let actual = find_solutions(&spec, &comb, Some(&mut visitor));
+        let dep_map = limit_conflict_map(&spec, &comb);
+        let limit = complexity_by_graph(&dep_map);
+        let dep_map = approx_conflict_map(&spec, &comb);
         let approx = complexity_by_graph(&dep_map);
         SpecCombParams {
-            spec: spec_hash,
+            spec: original_hash,
+            variant: spec_hash,
             comb: comb_hash,
-            test: visitor.test,
-            down: visitor.down,
-            solutions: actual,
-            limit_test: approx.tests,
-            limit_down: approx.downs,
-            limit_solutions: approx.solutions,
+            real: Criteria {
+                test: visitor.test,
+                down: visitor.down,
+                solutions: actual,
+            },
+            limit: Criteria {
+                test: limit.tests,
+                down: limit.downs,
+                solutions: limit.solutions,
+            },
+            approx: Criteria {
+                test: approx.tests.to_usize().unwrap_or_default(),
+                down: approx.downs.to_usize().unwrap_or_default(),
+                solutions: approx.solutions.to_usize().unwrap_or_default(),
+            },
         }
     }));
-
-    // let squish_dir = dir.join("squish");
     let spec: Vec<STS<_>> = spec.into_iter().map(|c| c.squish()).collect();
 
     let comb: Vec<_> = spec
@@ -132,17 +150,23 @@ where
     let limit = complexity_by_graph(&dep_map);
     let dep_map = approx_conflict_map(&spec, &comb);
     let approx = complexity_by_graph(&dep_map);
+
     let squished = SquishedParams {
-        spec: spec_hash,
-        limit_test: limit.tests,
-        limit_down: limit.downs,
-        limit_solutions: limit.solutions,
-        approx_test: approx.tests.to_usize().ok_or("cannot convert to usize")?,
-        approx_down: approx.downs.to_usize().ok_or("cannot convert to usize")?,
-        approx_solutions: approx
-            .solutions
-            .to_usize()
-            .ok_or("cannot convert to usize")?,
+        spec: original_hash,
+        variant: spec_hash,
+        limit: Criteria {
+            test: limit.tests,
+            down: limit.downs,
+            solutions: limit.solutions,
+        },
+        approx: Criteria {
+            test: approx.tests.to_usize().ok_or("cannot convert to usize")?,
+            down: approx.downs.to_usize().ok_or("cannot convert to usize")?,
+            solutions: approx
+                .solutions
+                .to_usize()
+                .ok_or("cannot convert to usize")?,
+        },
     };
 
     Ok((analytics, squished))

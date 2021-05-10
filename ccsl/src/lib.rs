@@ -4,6 +4,8 @@ extern crate pest_derive;
 extern crate derive_more;
 extern crate itertools;
 extern crate num;
+extern crate permutation;
+extern crate rand;
 extern crate thiserror;
 
 #[cfg(test)]
@@ -55,4 +57,6 @@ pub mod lccsl {
     pub mod vizualization;
 
     pub mod gen;
+
+    pub mod opti;
 }
