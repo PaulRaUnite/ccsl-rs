@@ -2,6 +2,9 @@ extern crate itertools;
 extern crate num;
 extern crate rayon;
 extern crate serde;
+#[macro_use]
+extern crate concat_arrays;
+extern crate arrow;
 
 use rayon::iter::ParallelBridge;
 use rayon::prelude::{ParallelExtend, ParallelIterator};
@@ -18,6 +21,9 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
+use arrow::array::{Array, ArrayRef, Int64Array, StructArray, StructBuilder, UInt64Array};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::algo::{
     approx_conflict_map, combination_identifier, complexity_by_graph, find_solutions,
     generate_combinations, limit_conflict_map, CountingVisitor,
@@ -27,7 +33,6 @@ use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
 };
-use ccsl::lccsl::opti::optimize_spec;
 use itertools::Itertools;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
@@ -35,6 +40,7 @@ use petgraph::Graph;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 pub fn write_graph<N: Display, E: Display>(
     g: &Graph<N, E>,
@@ -70,6 +76,104 @@ pub struct SpecCombParams {
     pub approx: Criteria,
 }
 
+impl SpecCombParams {
+    pub fn into_array(self) -> [u64; 12] {
+        let local = [self.spec, self.variant, self.comb];
+        let real = self.real.into_array();
+        let limit = self.limit.into_array();
+        let approx = self.approx.into_array();
+        concat_arrays!(local, real, limit, approx)
+    }
+
+    pub fn schema() -> Schema {
+        let criteria_type = Criteria::arrow_type();
+        Schema::new(vec![
+            Field::new("spec", DataType::Int64, false),
+            Field::new("variant", DataType::Int64, false),
+            Field::new("comb", DataType::Int64, false),
+            Field::new("real", criteria_type.clone(), false),
+            Field::new("limit", criteria_type.clone(), false),
+            Field::new("approx", criteria_type, false),
+        ])
+    }
+
+    pub fn batch(
+        schema: SchemaRef,
+        data: Vec<SpecCombParams>,
+    ) -> Result<RecordBatch, Box<dyn Error>> {
+        let size = data.len();
+        let mut spec_vec = Vec::with_capacity(size);
+        let mut var_vec = Vec::with_capacity(size);
+        let mut comb_vec = Vec::with_capacity(size);
+        let mut real_test_vec = Vec::with_capacity(size);
+        let mut limit_test_vec = Vec::with_capacity(size);
+        let mut approx_test_vec = Vec::with_capacity(size);
+        let mut real_down_vec = Vec::with_capacity(size);
+        let mut limit_down_vec = Vec::with_capacity(size);
+        let mut approx_down_vec = Vec::with_capacity(size);
+        let mut real_solution_vec = Vec::with_capacity(size);
+        let mut limit_solution_vec = Vec::with_capacity(size);
+        let mut approx_solution_vec = Vec::with_capacity(size);
+        for e in data {
+            // FIXME: u64 is not supported properly by parquet
+            // (see https://github.com/apache/arrow-rs/pull/258).
+            spec_vec.push(e.spec as i64);
+            var_vec.push(e.variant as i64);
+            comb_vec.push(e.comb as i64);
+            real_test_vec.push(e.real.test as u64);
+            real_down_vec.push(e.real.down as u64);
+            real_solution_vec.push(e.real.solutions as u64);
+            limit_test_vec.push(e.limit.test as u64);
+            limit_down_vec.push(e.limit.down as u64);
+            limit_solution_vec.push(e.limit.solutions as u64);
+            approx_test_vec.push(e.approx.test as u64);
+            approx_down_vec.push(e.approx.down as u64);
+            approx_solution_vec.push(e.approx.solutions as u64);
+        }
+
+        let spec_vec = Arc::new(Int64Array::from(spec_vec));
+        let var_vec = Arc::new(Int64Array::from(var_vec));
+        let comb_vec = Arc::new(Int64Array::from(comb_vec));
+
+        let real_test_vec: ArrayRef = Arc::new(UInt64Array::from(real_test_vec));
+        let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
+        let approx_test_vec: ArrayRef = Arc::new(UInt64Array::from(approx_test_vec));
+        let real_down_vec: ArrayRef = Arc::new(UInt64Array::from(real_down_vec));
+        let limit_down_vec: ArrayRef = Arc::new(UInt64Array::from(limit_down_vec));
+        let approx_down_vec: ArrayRef = Arc::new(UInt64Array::from(approx_down_vec));
+        let real_solution_vec: ArrayRef = Arc::new(UInt64Array::from(real_solution_vec));
+        let limit_solution_vec: ArrayRef = Arc::new(UInt64Array::from(limit_solution_vec));
+        let approx_solution_vec: ArrayRef = Arc::new(UInt64Array::from(approx_solution_vec));
+
+        let [test_f, down_f, solution_f] = Criteria::arrow_fields();
+        let real = Arc::new(StructArray::from(vec![
+            (test_f, real_test_vec),
+            (down_f, real_down_vec),
+            (solution_f, real_solution_vec),
+        ]));
+
+        let [test_f, down_f, solution_f] = Criteria::arrow_fields();
+        let limit = Arc::new(StructArray::from(vec![
+            (test_f, limit_test_vec),
+            (down_f, limit_down_vec),
+            (solution_f, limit_solution_vec),
+        ]));
+
+        let [test_f, down_f, solution_f] = Criteria::arrow_fields();
+        let approx = Arc::new(StructArray::from(vec![
+            (test_f, approx_test_vec),
+            (down_f, approx_down_vec),
+            (solution_f, approx_solution_vec),
+        ]));
+
+        let result = RecordBatch::try_new(
+            schema,
+            vec![spec_vec, var_vec, comb_vec, real, limit, approx],
+        )?;
+        Ok(result)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct SquishedParams {
     pub spec: u64,
@@ -78,11 +182,97 @@ pub struct SquishedParams {
     pub approx: Criteria,
 }
 
+impl SquishedParams {
+    pub fn into_array(self) -> [u64; 8] {
+        let local = [self.spec, self.variant];
+        let limit = self.limit.into_array();
+        let approx = self.approx.into_array();
+        concat_arrays!(local, limit, approx)
+    }
+
+    pub fn schema() -> Schema {
+        let criteria_type = Criteria::arrow_type();
+        Schema::new(vec![
+            Field::new("spec", DataType::Int64, false),
+            Field::new("variant", DataType::Int64, false),
+            Field::new("limit", criteria_type.clone(), false),
+            Field::new("approx", criteria_type, false),
+        ])
+    }
+
+    pub fn batch(
+        schema: SchemaRef,
+        data: &Vec<SquishedParams>,
+    ) -> Result<RecordBatch, Box<dyn Error>> {
+        let size = data.len();
+        let mut spec_vec = Vec::with_capacity(size);
+        let mut var_vec = Vec::with_capacity(size);
+        let mut limit_test_vec = Vec::with_capacity(size);
+        let mut approx_test_vec = Vec::with_capacity(size);
+        let mut limit_down_vec = Vec::with_capacity(size);
+        let mut approx_down_vec = Vec::with_capacity(size);
+        let mut limit_solution_vec = Vec::with_capacity(size);
+        let mut approx_solution_vec = Vec::with_capacity(size);
+        for e in data {
+            spec_vec.push(e.spec as i64);
+            var_vec.push(e.variant as i64);
+            limit_test_vec.push(e.limit.test as u64);
+            limit_down_vec.push(e.limit.down as u64);
+            limit_solution_vec.push(e.limit.solutions as u64);
+            approx_test_vec.push(e.approx.test as u64);
+            approx_down_vec.push(e.approx.down as u64);
+            approx_solution_vec.push(e.approx.solutions as u64);
+        }
+
+        let spec_vec: ArrayRef = Arc::new(Int64Array::from(spec_vec));
+        let var_vec: ArrayRef = Arc::new(Int64Array::from(var_vec));
+        let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
+        let approx_test_vec: ArrayRef = Arc::new(UInt64Array::from(approx_test_vec));
+        let limit_down_vec: ArrayRef = Arc::new(UInt64Array::from(limit_down_vec));
+        let approx_down_vec: ArrayRef = Arc::new(UInt64Array::from(approx_down_vec));
+        let limit_solution_vec: ArrayRef = Arc::new(UInt64Array::from(limit_solution_vec));
+        let approx_solution_vec: ArrayRef = Arc::new(UInt64Array::from(approx_solution_vec));
+
+        let [test_f, down_f, solution_f] = Criteria::arrow_fields();
+        let limit = Arc::new(StructArray::from(vec![
+            (test_f, limit_test_vec),
+            (down_f, limit_down_vec),
+            (solution_f, limit_solution_vec),
+        ]));
+
+        let [test_f, down_f, solution_f] = Criteria::arrow_fields();
+        let approx = Arc::new(StructArray::from(vec![
+            (test_f, approx_test_vec),
+            (down_f, approx_down_vec),
+            (solution_f, approx_solution_vec),
+        ]));
+
+        let result = RecordBatch::try_new(schema, vec![spec_vec, var_vec, limit, approx])?;
+        Ok(result)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct Criteria {
     pub test: usize,
     pub down: usize,
     pub solutions: usize,
+}
+impl Criteria {
+    pub fn into_array(self) -> [u64; 3] {
+        [self.test as u64, self.down as u64, self.solutions as u64]
+    }
+
+    pub fn arrow_type() -> DataType {
+        DataType::Struct(Self::arrow_fields().to_vec())
+    }
+    fn arrow_fields() -> [Field; 3] {
+        [
+            Field::new("tests", DataType::UInt64, false),
+            Field::new("downs", DataType::UInt64, false),
+            Field::new("solutions", DataType::UInt64, false),
+        ]
+    }
 }
 
 pub fn hash(h: impl Hash) -> u64 {
@@ -267,4 +457,12 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
         write_graph(&g, dir, name)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn casting() {
+        assert_eq!((u64::MAX as i64) as u64, u64::MAX);
+    }
 }

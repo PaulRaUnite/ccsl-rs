@@ -1,21 +1,37 @@
+extern crate arrow;
 extern crate csv;
 extern crate itertools;
+extern crate parquet;
 
 use std::error::Error;
 use std::path::PathBuf;
 
 use structopt::StructOpt;
 
+use arrow::datatypes::Schema;
+use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::automata::STS;
-use ccsl::lccsl::constraints::{Constraint, Delay, Precedence};
 use ccsl::lccsl::gen::{
     circle_spec, star, to_precedence_spec, to_subclocking_spec, tree, TreeIterator,
 };
 use ccsl::lccsl::opti::optimize_spec;
 use itertools::Itertools;
+use parquet::arrow::ArrowWriter;
+use parquet::basic;
+use parquet::basic::Compression;
+use parquet::basic::{IntType, LogicalType, Repetition};
+use parquet::column::writer::ColumnWriter;
+use parquet::file::properties::WriterProperties;
+use parquet::file::writer::{FileWriter, SerializedFileWriter, TryClone};
+use parquet::schema::types::{Type, TypePtr};
+use serde::Serialize;
+use std::borrow::BorrowMut;
 use std::fs::File;
 use std::io::BufWriter;
-use tool::{analyze_specification, hash, hash_spec, write_graph, write_graph_no_label};
+use std::sync::Arc;
+use tool::{
+    analyze_specification, hash, hash_spec, write_graph_no_label, SpecCombParams, SquishedParams,
+};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "basic", about = "Visualization of LightCCSL constraints")]
@@ -58,34 +74,8 @@ struct Opt {
     dir: PathBuf,
 }
 
-const FULL_HEADERS: [&str; 12] = [
-    "spec",
-    "variant",
-    "comb",
-    "real_tests",
-    "real_downs",
-    "real_solutions",
-    "limit_tests",
-    "limit_downs",
-    "limit_solutions",
-    "approx_tests",
-    "approx_downs",
-    "approx_solutions",
-];
-const SHORT_HEADERS: [&str; 8] = [
-    "spec",
-    "variant",
-    "limit_tests",
-    "limit_downs",
-    "limit_solutions",
-    "approx_tests",
-    "approx_downs",
-    "approx_solutions",
-];
-
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
-
     // all_constraints(&opt.dir.join("constraints"))?;
 
     let g = star(5, 3).unwrap();
@@ -103,28 +93,71 @@ fn main() -> Result<(), Box<dyn Error>> {
         write_graph_no_label(&g, &opt.dir.join("gen/test"), &i.to_string())?;
     }
 
-    let mut raw_wrt = csv::WriterBuilder::new()
-        .has_headers(false)
-        .from_writer(BufWriter::new(File::create(
-            "/home/paulra/Code/ccsl-rs/plotter/data.csv",
-        )?));
-    let mut optimized_wrt =
-        csv::WriterBuilder::new()
-            .has_headers(false)
-            .from_writer(BufWriter::new(File::create(
-                "/home/paulra/Code/ccsl-rs/plotter/optimized.csv",
-            )?));
-    let mut squished_wrt =
-        csv::WriterBuilder::new()
-            .has_headers(false)
-            .from_writer(BufWriter::new(File::create(
-                "/home/paulra/Code/ccsl-rs/plotter/squished.csv",
-            )?));
+    let spec_comb_schema = Arc::new(SpecCombParams::schema());
+    let squished_schema = Arc::new(SquishedParams::schema());
+    {
+        let mut main_parquet_wrt = ArrowWriter::try_new(
+            File::create("/home/paulra/Code/ccsl-rs/plotter/data.parquet")?,
+            spec_comb_schema.clone(),
+            Some(
+                WriterProperties::builder()
+                    .set_dictionary_enabled(false)
+                    .set_compression(Compression::SNAPPY)
+                    .build(),
+            ),
+        )?;
+        let mut squished_parquet_wrt = ArrowWriter::try_new(
+            File::create("/home/paulra/Code/ccsl-rs/plotter/squished.parquet")?,
+            squished_schema.clone(),
+            Some(
+                WriterProperties::builder()
+                    .set_dictionary_enabled(false)
+                    .set_compression(Compression::SNAPPY)
+                    .build(),
+            ),
+        )?;
+        let mut optimized_parquet_wrt = ArrowWriter::try_new(
+            File::create("/home/paulra/Code/ccsl-rs/plotter/optimized.parquet")?,
+            spec_comb_schema.clone(),
+            Some(
+                WriterProperties::builder()
+                    .set_dictionary_enabled(false)
+                    .set_compression(Compression::SNAPPY)
+                    .build(),
+            ),
+        )?;
 
-    raw_wrt.write_record(&FULL_HEADERS)?;
-    optimized_wrt.write_record(&FULL_HEADERS)?;
-    squished_wrt.write_record(&SHORT_HEADERS)?;
-    let gen_range = 3..=6;
+        analysis_test_refactor(
+            spec_comb_schema,
+            &squished_schema,
+            &mut main_parquet_wrt,
+            &mut squished_parquet_wrt,
+            &mut optimized_parquet_wrt,
+        )?;
+
+        main_parquet_wrt.close()?;
+        squished_parquet_wrt.close()?;
+        optimized_parquet_wrt.close()?;
+    }
+    // for name in names {
+    //     Command::new("dot")
+    //         .arg("-O")
+    //         .arg("-Tpng")
+    //         .arg(opt.dir.join(name).join(".dot"))
+    //         .output()?;
+    // }
+    Ok(())
+}
+
+fn analysis_test_refactor(
+    spec_comb_schema: Arc<Schema>,
+    squished_schema: &Arc<Schema>,
+    main_parquet_wrt: &mut ArrowWriter<File>,
+    squished_parquet_wrt: &mut ArrowWriter<File>,
+    optimized_parquet_wrt: &mut ArrowWriter<File>,
+) -> Result<(), Box<dyn Error>> {
+    let mut squished_buffer = Vec::with_capacity(1024);
+    let gen_range = 3..=7;
     for spec in gen_range
         .clone()
         .map(|size| circle_spec(size).unwrap())
@@ -165,8 +198,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             let spec: Vec<STS<usize>> = spec.clone().into_iter().map(Into::into).collect();
             let opti_spec = optimize_spec(spec.as_slice());
             let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
-            for el in analysis {
-                optimized_wrt.serialize(el)?;
+            {
+                let batch = SpecCombParams::batch(spec_comb_schema.clone(), analysis)?;
+                optimized_parquet_wrt.write(&batch)?;
             }
         }
         for perm in spec.into_iter().permutations(len) {
@@ -174,23 +208,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let perm: Vec<STS<_>> = perm.into_iter().map(Into::into).collect();
             let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
-            for el in analysis {
-                raw_wrt.serialize(el)?;
+            {
+                let batch = SpecCombParams::batch(spec_comb_schema.clone(), analysis)?;
+                main_parquet_wrt.write(&batch)?;
             }
-            squished_wrt.serialize(squished)?;
+
+            squished_buffer.push(squished);
+            if squished_buffer.len() == squished_buffer.capacity() {
+                squished_parquet_wrt.write(&SquishedParams::batch(
+                    squished_schema.clone(),
+                    &squished_buffer,
+                )?)?;
+                squished_buffer.clear();
+            }
         }
     }
-
-    raw_wrt.flush()?;
-    optimized_wrt.flush()?;
-    squished_wrt.flush()?;
-
-    // for name in names {
-    //     Command::new("dot")
-    //         .arg("-O")
-    //         .arg("-Tpng")
-    //         .arg(opt.dir.join(name).join(".dot"))
-    //         .output()?;
-    // }
+    squished_parquet_wrt.write(&SquishedParams::batch(
+        squished_schema.clone(),
+        &squished_buffer,
+    )?)?;
     Ok(())
 }

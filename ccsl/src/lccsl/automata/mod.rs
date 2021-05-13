@@ -1,5 +1,6 @@
 use crate::lccsl::expressions::{BooleanExpression, Switch};
 use itertools::Itertools;
+use sorted_iter::SortedIterator;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -9,7 +10,6 @@ use std::iter::repeat;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::Index;
-use std::rc::Rc;
 use std::sync::Arc;
 
 pub trait Guard<D> {
@@ -112,7 +112,7 @@ pub struct ClockLabel<'a, C> {
 
 impl<C: Ord + Hash> ClockLabel<'_, C> {
     pub fn has_conflict(&self, rhs: &Self) -> bool {
-        for v in self.clocks.intersection(&rhs.clocks) {
+        for v in self.clocks.iter().intersection(rhs.clocks.iter()) {
             if self.present.get(v) != rhs.present.get(v) {
                 return true;
             }

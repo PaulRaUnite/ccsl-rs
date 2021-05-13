@@ -15,6 +15,9 @@ serde = { version = "1", features = ["derive"] }
 csv = "1.1"
 num = "0.4"
 rayon = "1.5"
+parquet = "4.0"
+concat-arrays = "0.1.2"
+arrow = "4.0"
 
 [build]
 rustflags = ["-C", "target-cpu=native"]
