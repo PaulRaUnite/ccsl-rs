@@ -7,8 +7,7 @@ use itertools::Itertools;
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Delta, Guard, LabeledTransitionSystem, MergedTransition, State, STS};
-use crate::lccsl::expressions::BooleanExpression;
+use crate::lccsl::automata::{MergedTransition, STSBuilder, State, StateRef, STS};
 use num::rational::Ratio;
 use std::collections::hash_map::DefaultHasher;
 
@@ -38,7 +37,7 @@ impl fmt::Display for ConflictSource {
 
 pub fn approx_conflict_map<'a, C>(
     spec: &'a [STS<C>],
-    comb: &[&State<BooleanExpression<Delta<C>>>],
+    comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord,
@@ -94,7 +93,7 @@ where
 
 pub fn limit_conflict_map<'a, C>(
     spec: &'a [STS<C>],
-    comb: &[&State<BooleanExpression<Delta<C>>>],
+    comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<usize>>
 where
     C: Clone + Hash + Ord,
@@ -147,13 +146,12 @@ where
     g
 }
 
-fn limit_solutions<'a, C, G>(
-    m1: impl Iterator<Item = MergedTransition<'a, C, G>>,
-    m2: impl Iterator<Item = MergedTransition<'a, C, G>> + Clone,
+fn limit_solutions<'a, C>(
+    m1: impl Iterator<Item = MergedTransition<'a, C>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C>> + Clone,
 ) -> usize
 where
     C: Eq + Hash + Clone + Ord + 'a,
-    G: Clone + 'a,
 {
     m1.into_iter()
         .map(|x| {
@@ -165,13 +163,12 @@ where
         .max()
         .unwrap_or(0)
 }
-fn approx_solutions<'a, C, G>(
-    m1: impl Iterator<Item = MergedTransition<'a, C, G>>,
-    m2: impl Iterator<Item = MergedTransition<'a, C, G>> + Clone,
+fn approx_solutions<'a, C>(
+    m1: impl Iterator<Item = MergedTransition<'a, C>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C>> + Clone,
 ) -> usize
 where
     C: Eq + Hash + Clone + Ord + 'a,
-    G: Clone + 'a,
 {
     m1.into_iter()
         .map(|x| {
@@ -239,14 +236,13 @@ impl<C> Visitor<C> for DummyVisitor {
     fn solution(&mut self, _: &HashMap<C, bool>) {}
 }
 
-pub fn find_solutions<'a: 'b, 'b, C, G: 'b, D>(
-    spec: &'a [LabeledTransitionSystem<C, D, G>],
-    states: &'b [&State<G>],
+pub fn find_solutions<'a: 'b, 'b, C>(
+    spec: &'a [STS<C>],
+    states: &'b [StateRef],
     visitor: Option<&mut dyn Visitor<C>>,
 ) -> usize
 where
     C: Clone + Eq + Hash + Ord,
-    G: Guard<D> + Default,
 {
     rec_solutions(
         spec,
@@ -257,20 +253,19 @@ where
     .unwrap_or(0)
 }
 
-fn rec_solutions<'a, 'b, C, G: 'b, D>(
-    spec: &'a [LabeledTransitionSystem<C, D, G>],
-    states: &'b [&State<G>],
+fn rec_solutions<'a, 'b, C>(
+    spec: &'a [STS<C>],
+    states: &'b [StateRef],
     visitor: &mut dyn Visitor<C>,
     applied: HashMap<C, bool>,
 ) -> Option<usize>
 where
     C: Clone + Eq + Hash + Ord,
-    G: Guard<D> + Default,
 {
     let (sts, spec) = spec.split_first()?;
     let (state, states) = states.split_first()?;
     let solutions: usize = sts
-        .transitions(state)
+        .transitions(*state)
         .map(|t| {
             visitor.test();
             if !t.label.has_conflict_with_map(&applied) {
@@ -359,18 +354,18 @@ where
     aprox
 }
 
-pub fn generate_combinations<C>(
-    spec: &[STS<C>],
-) -> impl Iterator<Item = Vec<&State<BooleanExpression<Delta<C>>>>> + Send
+pub fn generate_combinations<'a, C>(
+    spec: &'a [STS<C>],
+) -> impl Iterator<Item = Vec<StateRef>> + 'a + Send
 where
     C: Ord + Hash + Clone + Send + Sync,
 {
     spec.iter()
-        .map(|sts| sts.states().iter())
+        .map(|sts| sts.states())
         .multi_cartesian_product()
 }
 
-pub fn combination_identifier<C, G>(hashes: &[u64], comb: &[&State<G>]) -> u64 {
+pub fn combination_identifier(hashes: &[u64], comb: &[StateRef]) -> u64 {
     let mut hasher = DefaultHasher::new();
     hashes
         .iter()

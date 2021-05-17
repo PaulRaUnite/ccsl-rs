@@ -8,7 +8,7 @@ use std::iter::once;
 use derive_more::From;
 use itertools::Itertools;
 
-use crate::lccsl::automata::{Delta, LabeledTransitionSystem, State, STS};
+use crate::lccsl::automata::{Delta, STSBuilder, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 
@@ -137,7 +137,7 @@ pub enum Constraint<C> {
     Delay(Delay<C>),
 }
 
-impl<C> From<Constraint<C>> for STS<C>
+impl<C> From<Constraint<C>> for STSBuilder<C>
 where
     C: Hash + Clone + Ord + fmt::Display,
 {
@@ -176,14 +176,14 @@ where
 //     }
 // }
 
-impl<C> From<Coincidence<C>> for STS<C>
+impl<C> From<Coincidence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Coincidence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let state = State::new(0).with_invariant(var.eq(0));
-        let mut system = STS::new(&c, state.clone());
+        let mut system = STSBuilder::new(&c, state.clone());
         tr!(system, &state => &state, {c.left, c.right,});
         tr!(system, &state => &state, {!c.left, !c.right,});
 
@@ -191,7 +191,7 @@ where
     }
 }
 
-impl<C> From<Alternates<C>> for STS<C>
+impl<C> From<Alternates<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -199,7 +199,7 @@ where
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let alt = State::new(1).with_invariant(var.eq(1));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &alt, {c.left, !c.right,});
         tr!(system, &start => &start, {!c.left, !c.right,});
@@ -210,7 +210,7 @@ where
     }
 }
 
-impl<C> From<Causality<C>> for STS<C>
+impl<C> From<Causality<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -218,7 +218,7 @@ where
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
-        let mut system: STS<C> = Precedence {
+        let mut system: STSBuilder<C> = Precedence {
             left: c.left.clone(),
             right: c.right.clone(),
             init: None,
@@ -231,7 +231,7 @@ where
     }
 }
 
-impl<C> From<Precedence<C>> for STS<C>
+impl<C> From<Precedence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -243,7 +243,7 @@ where
 
         let start = State::new(0).with_invariant(var.eq(0));
         let next = State::new(1).with_invariant(var.more(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
         tr!(system, &start => &next, {c.left, !c.right,});
 
         tr!(system, &next => &next, {c.left, !c.right,});
@@ -258,13 +258,13 @@ where
     }
 }
 
-impl<C> From<Exclusion<C>> for STS<C>
+impl<C> From<Exclusion<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Exclusion<C>) -> Self {
         let start = State::new(0);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &start, {});
         for clock in c.clocks {
@@ -274,14 +274,14 @@ where
     }
 }
 
-impl<C> From<Subclocking<C>> for STS<C>
+impl<C> From<Subclocking<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Subclocking<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &start, {c.left,});
         tr!(system, &start => &start, {c.left, c.right,});
@@ -290,7 +290,7 @@ where
     }
 }
 
-impl<C> From<Union<C>> for STS<C>
+impl<C> From<Union<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -301,7 +301,7 @@ where
             invariant = invariant & var.more_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         for i in 1..=c.args.len() {
             for comb in c.args.iter().combinations(i) {
@@ -320,7 +320,7 @@ where
     }
 }
 
-impl<C> From<Intersection<C>> for STS<C>
+impl<C> From<Intersection<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -331,7 +331,7 @@ where
             invariant = invariant & var.less_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         system.add_transition(
             &start,
@@ -346,14 +346,14 @@ where
         system
     }
 }
-impl<C> From<Delay<C>> for STS<C>
+impl<C> From<Delay<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Delay<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         let mut last = start.clone();
         for i in 1..=c.delay {
@@ -368,37 +368,37 @@ where
     }
 }
 
-impl<C> From<Infinity<C>> for STS<C> {
+impl<C> From<Infinity<C>> for STSBuilder<C> {
     fn from(_: Infinity<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Supremum<C>> for STS<C> {
+impl<C> From<Supremum<C>> for STSBuilder<C> {
     fn from(_: Supremum<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Minus<C>> for STS<C> {
+impl<C> From<Minus<C>> for STSBuilder<C> {
     fn from(_: Minus<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Diff<C>> for STS<C> {
+impl<C> From<Diff<C>> for STSBuilder<C> {
     fn from(_: Diff<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<SampleOn<C>> for STS<C> {
+impl<C> From<SampleOn<C>> for STSBuilder<C> {
     fn from(_: SampleOn<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Filter<C>> for STS<C> {
+impl<C> From<Filter<C>> for STSBuilder<C> {
     fn from(_: Filter<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Repeat<C>> for STS<C> {
+impl<C> From<Repeat<C>> for STSBuilder<C> {
     fn from(_: Repeat<C>) -> Self {
         todo!()
     }
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn into_automaton() {
-        let a: STS<&str> = Coincidence {
+        let a: STSBuilder<&str> = Coincidence {
             left: "a",
             right: "b",
         }
@@ -477,5 +477,15 @@ impl<C: fmt::Display> fmt::Display for Intersection<C> {
 impl<C: fmt::Display> fmt::Display for Delay<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}${}", self.out, self.base, self.delay)
+    }
+}
+
+impl<C> From<Constraint<C>> for STS<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(v: Constraint<C>) -> Self {
+        let builder: STSBuilder<C> = v.into();
+        builder.into()
     }
 }

@@ -1,18 +1,27 @@
 use crate::lccsl::algo::approx_conflict_map;
-use crate::lccsl::automata::STS;
+use crate::lccsl::automata::{STSBuilder, STS};
+use crate::lccsl::constraints::Constraint;
 use itertools::Itertools;
 use num::rational::Ratio;
 use permutation::sort;
 use petgraph::Direction;
+use std::fmt::Display;
 use std::hash::Hash;
 
-pub fn optimize_spec<C: Clone + Hash + Ord>(spec: &[STS<C>]) -> Vec<STS<C>> {
-    let squished_spec = spec.iter().map(|c| c.clone().squish()).collect_vec();
-    let comb = squished_spec
+pub fn optimize_spec<C>(spec: &[Constraint<C>]) -> Vec<Constraint<C>>
+where
+    C: Clone + Hash + Ord + Display,
+{
+    let squished_spec: Vec<STS<C>> = spec
         .iter()
-        .map(|c| c.states().iter().next().unwrap())
+        .map(|c| {
+            Into::<STS<C>>::into(Into::<STSBuilder<C>>::into(c.clone()))
+                .squish()
+                .into()
+        })
         .collect_vec();
-    let conflict_map = approx_conflict_map(spec, &comb);
+    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
+    let conflict_map = approx_conflict_map(&squished_spec, &comb);
     let weights: Vec<Ratio<usize>> = conflict_map
         .node_indices()
         .into_iter()

@@ -22,7 +22,7 @@ use ccsl::lccsl::algo::{
     approx_conflict_map, combination_identifier, complexity_by_graph, find_solutions,
     generate_combinations, limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::STS;
+use ccsl::lccsl::automata::{STSBuilder, STS};
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
@@ -58,6 +58,10 @@ pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug>(
     let dot = Dot::with_config(g, &[NodeNoLabel, EdgeNoLabel]);
     writeln!(&mut file, "{:?}", &dot)?;
     Ok(())
+}
+
+pub fn vec_into_vec<I: Into<O>, O>(vec: impl IntoIterator<Item = I>) -> Vec<O> {
+    vec.into_iter().map(Into::into).collect_vec()
 }
 
 #[derive(Debug, Copy, Clone, Serialize)]
@@ -109,9 +113,9 @@ where
 {
     let spec_hash = hash(&hashes);
 
-    let mut analytics = Vec::with_capacity(spec.iter().map(|c| c.states().len()).product());
+    let mut analytics = Vec::with_capacity(spec.iter().map(|c| c.states().size_hint().0).product());
     analytics.par_extend(generate_combinations(&spec).par_bridge().map(|comb| {
-        let comb_hash = combination_identifier::<C, _>(&hashes, &comb);
+        let comb_hash = combination_identifier(&hashes, &comb);
         let mut visitor = CountingVisitor::new();
         let actual = find_solutions(&spec, &comb, Some(&mut visitor));
         let dep_map = limit_conflict_map(&spec, &comb);
@@ -143,7 +147,7 @@ where
 
     let comb: Vec<_> = spec
         .iter()
-        .map(|c| c.states().iter().exactly_one())
+        .map(|c| c.states().exactly_one())
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let dep_map = limit_conflict_map(&spec, &comb);
@@ -187,83 +191,83 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     let mut map: HashMap<&str, STS<&str>> = HashMap::new();
     map.insert(
         "coincidence",
-        Coincidence {
+        Into::<STSBuilder<_>>::into(Coincidence {
             left: "a",
             right: "b",
-        }
+        })
         .into(),
     );
     map.insert(
         "alternates",
-        Alternates {
+        Into::<STSBuilder<_>>::into(Alternates {
             left: "a",
             right: "b",
-        }
+        })
         .into(),
     );
     map.insert(
         "causality",
-        Causality {
+        Into::<STSBuilder<_>>::into(Causality {
             left: "a",
             right: "b",
             init: None,
             max: None,
-        }
+        })
         .into(),
     );
     map.insert(
         "precedence",
-        Precedence {
+        Into::<STSBuilder<_>>::into(Precedence {
             left: "a",
             right: "b",
             init: None,
             max: None,
-        }
+        })
         .into(),
     );
     map.insert(
         "exclusion",
-        Exclusion {
+        Into::<STSBuilder<_>>::into(Exclusion {
             clocks: collection!("a", "b"),
-        }
+        })
         .into(),
     );
     map.insert(
         "subclocking",
-        Subclocking {
+        Into::<STSBuilder<_>>::into(Subclocking {
             left: "a",
             right: "b",
-        }
+        })
         .into(),
     );
     map.insert(
         "intersection",
-        Intersection {
+        Into::<STSBuilder<_>>::into(Intersection {
             out: "i",
             args: collection!("a", "b"),
-        }
+        })
         .into(),
     );
     map.insert(
         "union",
-        Union {
+        Into::<STSBuilder<_>>::into(Union {
             out: "u",
             args: collection!("a", "b"),
-        }
+        })
         .into(),
     );
     map.insert(
         "delay",
-        Delay {
+        Into::<STSBuilder<_>>::into(Delay {
             out: "d",
             base: "a",
             delay: 2,
             on: None,
-        }
+        })
         .into(),
     );
     for (name, c) in map.into_iter() {
-        let g: petgraph::Graph<&_, _> = (&c).into();
+        let g: petgraph::Graph<_, _> = (&c).into();
         write_graph(&g, dir, name)?;
     }
     Ok(())

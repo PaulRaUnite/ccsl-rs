@@ -7,9 +7,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::repeat;
 use std::iter::FromIterator;
-use std::marker::PhantomData;
-use std::ops::Index;
-use std::rc::Rc;
+use std::ops::{Index, Range};
 use std::sync::Arc;
 
 pub trait Guard<D> {
@@ -25,12 +23,12 @@ impl<C: fmt::Display> fmt::Display for Delta<C> {
     }
 }
 #[derive(Debug)]
-pub struct State<G> {
+pub struct State<C> {
     pub id: usize,
-    pub invariant: Option<Arc<G>>,
+    pub invariant: Option<Arc<BooleanExpression<Delta<C>>>>,
 }
 
-impl<G> Clone for State<G> {
+impl<C> Clone for State<C> {
     fn clone(&self) -> Self {
         Self {
             id: self.id.clone(),
@@ -39,33 +37,33 @@ impl<G> Clone for State<G> {
     }
 }
 
-impl<G> PartialEq for State<G> {
+impl<C> PartialEq for State<C> {
     fn eq(&self, other: &Self) -> bool {
         &self.id == &other.id
     }
 }
 
-impl<G> PartialOrd for State<G> {
+impl<C> PartialOrd for State<C> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.id.partial_cmp(&other.id)
     }
 }
 
-impl<G> Ord for State<G> {
+impl<C> Ord for State<C> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
 }
 
-impl<G> Hash for State<G> {
+impl<C> Hash for State<C> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         &self.id.hash(state);
     }
 }
 
-impl<G> Eq for State<G> {}
+impl<C> Eq for State<C> {}
 
-impl<G: fmt::Display> fmt::Display for State<G> {
+impl<C: fmt::Display> fmt::Display for State<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.id)?;
         if let Some(g) = &self.invariant {
@@ -76,14 +74,14 @@ impl<G: fmt::Display> fmt::Display for State<G> {
     }
 }
 
-impl<G> State<G> {
-    pub const fn new(id: usize) -> State<G> {
+impl<C> State<C> {
+    pub const fn new(id: usize) -> State<C> {
         Self {
             id,
             invariant: Option::None,
         }
     }
-    pub fn with_invariant(self, guard: G) -> Self {
+    pub fn with_invariant(self, guard: BooleanExpression<Delta<C>>) -> Self {
         Self {
             id: self.id,
             invariant: Some(Arc::new(guard)),
@@ -92,13 +90,13 @@ impl<G> State<G> {
 }
 
 #[derive(Debug, Clone)]
-pub struct MergedTransition<'a, C, G> {
-    pub from: State<G>,
+pub struct MergedTransition<'a, C> {
+    pub from: StateRef,
     pub label: ClockLabel<'a, C>,
-    pub switch: &'a Switch<G, State<G>>,
+    pub switch: &'a Switch<Expr<C>, State<C>>,
 }
 
-impl<C: fmt::Display, G: fmt::Display> fmt::Display for MergedTransition<'_, C, G> {
+impl<C: fmt::Display> fmt::Display for MergedTransition<'_, C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", &self.label)
     }
@@ -225,24 +223,22 @@ impl<C: fmt::Display> fmt::Display for ClockLabel<'_, C> {
     }
 }
 
+pub type Expr<C> = BooleanExpression<Delta<C>>;
+
 #[derive(Debug, Clone)]
-pub struct LabeledTransitionSystem<C, D, G> {
+pub struct STSBuilder<C> {
     name: String,
-    states: BTreeSet<State<G>>,
+    states: BTreeSet<State<C>>,
     clocks: BTreeSet<C>,
-    transitions: HashMap<State<G>, BTreeMap<BTreeSet<C>, Switch<G, State<G>>>>,
-    initial_state: State<G>,
-    _phantom: PhantomData<D>,
+    transitions: HashMap<State<C>, BTreeMap<BTreeSet<C>, Switch<Expr<C>, State<C>>>>,
+    initial_state: State<C>,
 }
 
-pub type STS<C> = LabeledTransitionSystem<C, Delta<C>, BooleanExpression<Delta<C>>>;
-
-impl<C, D, G> LabeledTransitionSystem<C, D, G>
+impl<C> STSBuilder<C>
 where
     C: Eq + Hash + Clone + Ord,
-    G: Guard<D> + Default,
 {
-    pub fn new(name: impl ToString, initial: State<G>) -> Self {
+    pub fn new(name: impl ToString, initial: State<C>) -> Self {
         let mut states = BTreeSet::new();
         states.insert(initial.clone());
         Self {
@@ -251,20 +247,19 @@ where
             clocks: Default::default(),
             transitions: HashMap::new(),
             initial_state: initial,
-            _phantom: PhantomData,
         }
     }
 
-    pub fn initial(&self) -> &State<G> {
+    pub fn initial(&self) -> &State<C> {
         &self.initial_state
     }
 
     fn add_transition_with_guard_private<I>(
         &mut self,
-        from: &State<G>,
-        to: &State<G>,
+        from: &State<C>,
+        to: &State<C>,
         label: I,
-        guard: Option<G>,
+        guard: Option<Expr<C>>,
     ) where
         I: IntoIterator<Item = (C, bool)>,
         for<'a> &'a I: IntoIterator<Item = &'a (C, bool)>,
@@ -294,7 +289,7 @@ where
             switch.add_default_variant(to.clone())
         }
     }
-    pub fn add_transition<I>(&mut self, from: &State<G>, to: &State<G>, label: I)
+    pub fn add_transition<I>(&mut self, from: &State<C>, to: &State<C>, label: I)
     where
         I: IntoIterator<Item = (C, bool)>,
         for<'a> &'a I: IntoIterator<Item = &'a (C, bool)>,
@@ -303,10 +298,10 @@ where
     }
     pub fn add_transition_with_guard<I>(
         &mut self,
-        from: &State<G>,
-        to: &State<G>,
+        from: &State<C>,
+        to: &State<C>,
         label: I,
-        guard: G,
+        guard: Expr<C>,
     ) where
         I: IntoIterator<Item = (C, bool)>,
         for<'a> &'a I: IntoIterator<Item = &'a (C, bool)>,
@@ -314,97 +309,17 @@ where
         self.add_transition_with_guard_private(from, to, label, Some(guard));
     }
 
-    pub fn states(&self) -> &BTreeSet<State<G>> {
-        &self.states
-    }
-
-    pub fn transitions<'a>(
-        &'a self,
-        state: &'a State<G>,
-    ) -> impl Iterator<Item = MergedTransition<'a, C, G>> + Clone {
-        self.transitions.get(&state).into_iter().flat_map(
-            move |trans: &'a BTreeMap<_, Switch<G, State<G>>>| {
-                trans
-                    .iter()
-                    .zip(repeat((self, state)))
-                    .map(|((label, switch), (s, state))| MergedTransition {
-                        from: state.clone(),
-                        label: ClockLabel {
-                            present: label,
-                            clocks: &s.clocks,
-                        },
-                        switch,
-                    })
-            },
-        )
-    }
-
-    pub fn clocks(&self) -> &BTreeSet<C> {
-        &self.clocks
-    }
-
-    pub fn squish(self) -> Self {
-        let state = State::new(0);
-        let mut system = LabeledTransitionSystem::new(self.name, state.clone());
-
-        system.clocks = self.clocks;
-        for label in self
-            .transitions
-            .into_iter()
-            .map(|(_, t)| t.into_iter().map(|(k, v)| k))
-            .flatten()
-        {
-            let map = system
-                .transitions
-                .entry(state.clone())
-                .or_insert_with(|| Default::default());
-            map.entry(label).or_insert_with(|| {
-                let mut s = Switch::new();
-                s.add_default_variant(state.clone());
-                s
-            });
-        }
-        system
-    }
-
-    pub fn transitions_len(&self, from: &State<G>) -> usize {
+    pub fn transitions_len(&self, from: &State<C>) -> usize {
         self.transitions.get(from).map(|h| h.len()).unwrap_or(0)
     }
 }
 
-impl<'a, C, D, G> From<&'a LabeledTransitionSystem<C, D, G>>
-    for petgraph::Graph<&'a State<G>, ClockLabel<'a, C>>
-where
-    C: Eq + Hash + Clone + Ord,
-    G: Guard<D> + Default,
-{
-    fn from(system: &'a LabeledTransitionSystem<C, D, G>) -> Self {
-        let mut graph = petgraph::Graph::new();
-        let nodes: HashMap<_, _> = system
-            .states
-            .iter()
-            .map(|s| (s.id, graph.add_node(s)))
-            .collect();
-        for s in system.transitions.keys() {
-            for t in system.transitions(s) {
-                for (g, to) in t.switch.variants() {
-                    graph.add_edge(
-                        *nodes.get(&t.from.id).unwrap(),
-                        *nodes.get(&to.id).unwrap(),
-                        t.label.clone(),
-                    );
-                }
-            }
-        }
-        graph
-    }
-}
-
-impl<C, D, G: Guard<D>> fmt::Display for LabeledTransitionSystem<C, D, G> {
+impl<C> fmt::Display for STSBuilder<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
+
 #[macro_use]
 mod macros {
     #[macro_export]
@@ -440,5 +355,152 @@ mod macros {
         ($s:expr, $from:expr => $to:expr, $($tts:tt)*) => {
             $s.add_transition($from, $to, trigger!$($tts)*);
         };
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct STS<C> {
+    name: String,
+    states: Vec<Option<Arc<Expr<C>>>>,
+    states_to_trans: Vec<Range<usize>>,
+    clocks: BTreeSet<C>,
+    transitions: Vec<(BTreeSet<C>, Switch<Expr<C>, State<C>>)>,
+    initial_state: usize,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct StateRef(usize);
+
+impl<C> From<STSBuilder<C>> for STS<C> {
+    fn from(system: STSBuilder<C>) -> Self {
+        let name = system.name;
+        let clocks = system.clocks;
+        let index: HashMap<_, _> = system
+            .states
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| (v, i))
+            .collect();
+        let initial_state = *index.get(&system.initial_state).unwrap();
+        let mut state_invariants = vec![None; index.len()];
+        for (s, i) in index.iter() {
+            state_invariants[*i] = s.invariant.clone();
+        }
+
+        let mut transitions =
+            Vec::with_capacity(system.transitions.values().map(|t| t.len()).sum());
+        let mut states_to_trans = vec![0..0; system.transitions.len()];
+        for (state, tr) in system.transitions {
+            let start = transitions.len();
+            let finish = start + tr.len();
+            states_to_trans[*index.get(&state).unwrap()] = start..finish;
+            transitions.extend(tr);
+        }
+
+        Self {
+            name,
+            states: state_invariants,
+            states_to_trans,
+            clocks,
+            transitions,
+            initial_state,
+        }
+    }
+}
+
+impl<C> STS<C> {
+    pub fn initial(&self) -> StateRef {
+        StateRef(self.initial_state)
+    }
+
+    pub fn states<'a>(&'a self) -> impl Iterator<Item = StateRef> + 'a + Clone + Debug {
+        (0..self.states.len()).map(|i| StateRef(i))
+    }
+    pub fn full_states<'a>(&'a self) -> impl Iterator<Item = State<C>> + 'a + Clone {
+        self.states.iter().enumerate().map(|(i, inv)| State {
+            id: i,
+            invariant: inv.clone(),
+        })
+    }
+
+    pub fn transitions(
+        &self,
+        state: StateRef,
+    ) -> impl Iterator<Item = MergedTransition<C>> + Clone {
+        self.transitions
+            .get(self.states_to_trans[state.0].clone())
+            .unwrap()
+            .into_iter()
+            .map(move |(label, switch)| MergedTransition {
+                from: state.clone(),
+                label: ClockLabel {
+                    present: label,
+                    clocks: &self.clocks,
+                },
+                switch,
+            })
+    }
+
+    pub fn clocks(&self) -> &BTreeSet<C> {
+        &self.clocks
+    }
+
+    pub fn transitions_len(&self, from: StateRef) -> usize {
+        self.states_to_trans[from.0].len()
+    }
+}
+
+impl<C: Clone + Hash + Eq> STS<C> {
+    pub fn squish(self) -> Self {
+        let transitions = self
+            .transitions
+            .into_iter()
+            .map(|(label, _)| label)
+            .unique()
+            .map(|label| {
+                let mut switch = Switch::new();
+                switch.add_default_variant(State::new(0));
+                (label, switch)
+            })
+            .collect_vec();
+        Self {
+            name: self.name,
+            states: vec![None],
+            states_to_trans: vec![0..transitions.len()],
+            clocks: self.clocks,
+            transitions,
+            initial_state: 0,
+        }
+    }
+}
+
+impl<C> fmt::Display for STS<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl<'a, C> From<&'a STS<C>> for petgraph::Graph<State<C>, ClockLabel<'a, C>>
+where
+    C: Clone,
+{
+    fn from(system: &'a STS<C>) -> Self {
+        let mut graph = petgraph::Graph::new();
+        let nodes: HashMap<_, _> = system
+            .full_states()
+            .map(|s| (s.id, graph.add_node(s)))
+            .collect();
+        for s in system.states() {
+            for t in system.transitions(s) {
+                for (_, to) in t.switch.variants() {
+                    graph.add_edge(
+                        *nodes.get(&t.from.0).unwrap(),
+                        *nodes.get(&to.id).unwrap(),
+                        t.label.clone(),
+                    );
+                }
+            }
+        }
+        graph
     }
 }
