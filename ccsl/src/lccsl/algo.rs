@@ -7,9 +7,10 @@ use itertools::Itertools;
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{MergedTransition, STSBuilder, State, StateRef, STS};
+use crate::lccsl::automata::{Label, MergedTransition, State, StateRef, STS};
 use num::rational::Ratio;
 use std::collections::hash_map::DefaultHasher;
+use std::ops::BitOr;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConflictEffect<R> {
@@ -35,14 +36,15 @@ impl fmt::Display for ConflictSource {
     }
 }
 
-pub fn approx_conflict_map<'a, C>(
-    spec: &'a [STS<C>],
+pub fn approx_conflict_map<'a, C, L>(
+    spec: &'a [STS<C, L>],
     comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord,
+    L: Label<C>,
 {
-    let mut index: HashMap<&C, Vec<(usize, &STS<C>)>> = HashMap::new();
+    let mut index: HashMap<&C, Vec<(usize, &STS<C, L>)>> = HashMap::new();
     for (i, constraint) in spec.iter().enumerate() {
         for clock in constraint.clocks() {
             index
@@ -91,14 +93,15 @@ where
     g
 }
 
-pub fn limit_conflict_map<'a, C>(
-    spec: &'a [STS<C>],
+pub fn limit_conflict_map<'a, C, L>(
+    spec: &'a [STS<C, L>],
     comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<usize>>
 where
     C: Clone + Hash + Ord,
+    L: Label<C>,
 {
-    let mut index: HashMap<&C, Vec<(usize, &STS<C>)>> = HashMap::new();
+    let mut index: HashMap<&C, Vec<(usize, &STS<C, L>)>> = HashMap::new();
     for (i, constraint) in spec.iter().enumerate() {
         for clock in constraint.clocks() {
             index
@@ -146,12 +149,13 @@ where
     g
 }
 
-fn limit_solutions<'a, C>(
-    m1: impl Iterator<Item = MergedTransition<'a, C>>,
-    m2: impl Iterator<Item = MergedTransition<'a, C>> + Clone,
+fn limit_solutions<'a, C, L>(
+    m1: impl Iterator<Item = MergedTransition<'a, C, L>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C, L>> + Clone,
 ) -> usize
 where
     C: Eq + Hash + Clone + Ord + 'a,
+    L: Label<C> + 'a,
 {
     m1.into_iter()
         .map(|x| {
@@ -163,12 +167,13 @@ where
         .max()
         .unwrap_or(0)
 }
-fn approx_solutions<'a, C>(
-    m1: impl Iterator<Item = MergedTransition<'a, C>>,
-    m2: impl Iterator<Item = MergedTransition<'a, C>> + Clone,
+fn approx_solutions<'a, C, L>(
+    m1: impl Iterator<Item = MergedTransition<'a, C, L>>,
+    m2: impl Iterator<Item = MergedTransition<'a, C, L>> + Clone,
 ) -> usize
 where
     C: Eq + Hash + Clone + Ord + 'a,
+    L: Label<C> + 'a,
 {
     m1.into_iter()
         .map(|x| {
@@ -189,7 +194,7 @@ pub struct CountingVisitor {
 pub trait Visitor<C> {
     fn test(&mut self);
     fn down(&mut self);
-    fn solution(&mut self, sol: &HashMap<C, bool>);
+    fn solution(&mut self);
 }
 
 impl CountingVisitor {
@@ -211,7 +216,7 @@ impl<C> Visitor<C> for CountingVisitor {
         self.down += 1;
     }
 
-    fn solution(&mut self, _: &HashMap<C, bool>) {
+    fn solution(&mut self) {
         self.solutions += 1;
     }
 }
@@ -233,34 +238,38 @@ impl<C> Visitor<C> for DummyVisitor {
 
     fn down(&mut self) {}
 
-    fn solution(&mut self, _: &HashMap<C, bool>) {}
+    fn solution(&mut self) {}
 }
 
-pub fn find_solutions<'a: 'b, 'b, C>(
-    spec: &'a [STS<C>],
+pub fn find_solutions<'a: 'b, 'b, C, L>(
+    spec: &'a [STS<C, L>],
     states: &'b [StateRef],
     visitor: Option<&mut dyn Visitor<C>>,
 ) -> usize
 where
     C: Clone + Eq + Hash + Ord,
+    L: Label<C>,
+    for<'c,'d> &'c L: BitOr<&'d L, Output = L>
 {
     rec_solutions(
         spec,
         states,
         visitor.unwrap_or(&mut DummyVisitor),
-        HashMap::with_capacity(spec.iter().map(|c| c.clocks().len()).sum()),
+        L::with_capacity_hint(spec.iter().map(|c| c.clocks().len()).sum()),
     )
     .unwrap_or(0)
 }
 
-fn rec_solutions<'a, 'b, C>(
-    spec: &'a [STS<C>],
+fn rec_solutions<'a, 'b, C, L>(
+    spec: &'a [STS<C, L>],
     states: &'b [StateRef],
     visitor: &mut dyn Visitor<C>,
-    applied: HashMap<C, bool>,
+    applied: L,
 ) -> Option<usize>
 where
     C: Clone + Eq + Hash + Ord,
+    L: Label<C>,
+    for<'c,'d> &'c L: BitOr<&'d L, Output = L>
 {
     let (sts, spec) = spec.split_first()?;
     let (state, states) = states.split_first()?;
@@ -268,22 +277,10 @@ where
         .transitions(*state)
         .map(|t| {
             visitor.test();
-            if !t.label.has_conflict_with_map(&applied) {
+            if !t.label.has_conflict(&applied) {
                 visitor.down();
-                rec_solutions(
-                    spec,
-                    states,
-                    visitor,
-                    applied
-                        .iter()
-                        .map(|(c, b)| (c, *b))
-                        .chain(t.label.clocks.iter().map(|c| (c, false)))
-                        .chain(t.label.present.iter().map(|c| (c, true)))
-                        .map(|(c, b)| (c.clone(), b))
-                        .collect(),
-                )
-                .unwrap_or_else(|| {
-                    visitor.solution(&applied);
+                rec_solutions(spec, states, visitor, &applied | t.label).unwrap_or_else(|| {
+                    visitor.solution();
                     1
                 })
             } else {

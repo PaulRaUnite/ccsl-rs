@@ -1,13 +1,13 @@
 use crate::lccsl::expressions::{BooleanExpression, Switch};
 use itertools::Itertools;
+use roaring::{RoaringBitmap, RoaringTreemap};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
-use std::iter::repeat;
 use std::iter::FromIterator;
-use std::ops::{Index, Range};
+use std::ops::{BitOr, Index, Range};
 use std::sync::Arc;
 
 pub trait Guard<D> {
@@ -90,136 +90,134 @@ impl<C> State<C> {
 }
 
 #[derive(Debug, Clone)]
-pub struct MergedTransition<'a, C> {
+pub struct MergedTransition<'a, C, L> {
     pub from: StateRef,
-    pub label: ClockLabel<'a, C>,
+    pub label: &'a L,
     pub switch: &'a Switch<Expr<C>, State<C>>,
 }
 
-impl<C: fmt::Display> fmt::Display for MergedTransition<'_, C> {
+impl<C, L: fmt::Display> fmt::Display for MergedTransition<'_, C, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.label)
+        write!(f, "{}", self.label)
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct ClockLabel<'a, C> {
-    pub present: &'a BTreeSet<C>,
-    pub clocks: &'a BTreeSet<C>,
-}
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct ClockLabelClassic<C>(BTreeMap<C, bool>);
 
-impl<C: Ord + Hash> ClockLabel<'_, C> {
-    pub fn has_conflict(&self, rhs: &Self) -> bool {
-        for v in self.clocks.intersection(&rhs.clocks) {
-            if self.present.get(v) != rhs.present.get(v) {
-                return true;
+impl<C: Ord> Label<C> for ClockLabelClassic<C> {
+    fn has_conflict(&self, rhs: &Self) -> bool {
+        for (v, b) in &self.0 {
+            match rhs.0.get(v) {
+                Some(rb) if rb != b => return true,
+                _ => {}
             }
         }
         false
     }
 
-    pub fn has_conflict_with_map(&self, rhs: &HashMap<C, bool>) -> bool {
-        for c in self.clocks {
-            if let Some(v) = rhs.get(c) {
-                if self.present.contains(c) != *v {
-                    return true;
-                }
-            }
-        }
-        false
+    fn with_capacity_hint(size: usize) -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl<C: Ord> FromIterator<(C, bool)> for ClockLabelClassic<C> {
+    fn from_iter<T: IntoIterator<Item = (C, bool)>>(iter: T) -> Self {
+        ClockLabelClassic(iter.into_iter().collect())
+    }
+}
+
+impl<C: Ord> Default for ClockLabelClassic<C> {
+    fn default() -> Self {
+        ClockLabelClassic(BTreeMap::new())
+    }
+}
+
+impl<C: Clone + Ord> ClockLabelClassic<C> {
+    pub fn new(clocks: &BTreeSet<C>, present: &BTreeSet<C>) -> Self {
+        Self(
+            clocks
+                .iter()
+                .map(|c| (c.clone(), false))
+                .chain(present.iter().map(|c| (c.clone(), true)))
+                .collect(),
+        )
+    }
+}
+
+impl<'a, 'b, C: Ord + Clone> BitOr<&'b ClockLabelClassic<C>> for &'a ClockLabelClassic<C> {
+    type Output = ClockLabelClassic<C>;
+
+    fn bitor(self, rhs: &'b ClockLabelClassic<C>) -> Self::Output {
+        ClockLabelClassic(
+            self.0
+                .iter()
+                .map(|(c, b)| (c.clone(), *b))
+                .chain(rhs.0.iter().map(|(c, b)| (c.clone(), *b)))
+                .collect(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::lccsl::automata::ClockLabel;
-    use std::collections::{BTreeSet, HashMap};
+    use crate::lccsl::automata::{BitmapLabel, ClockLabelClassic, Label};
+    use std::collections::BTreeSet;
     use std::iter::FromIterator;
 
-    #[test]
-    fn conflicts() {
-        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
-
-        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let v2 = BTreeSet::from_iter(vec!["b"]);
-
-        let lab1 = ClockLabel {
-            present: &v1,
-            clocks: &c1,
-        };
-        let lab2 = ClockLabel {
-            present: &v2,
-            clocks: &c2,
-        };
-
-        assert_eq!(lab1.has_conflict(&lab2), false);
-        assert_eq!(lab2.has_conflict(&lab1), false);
-    }
-    #[test]
-    fn conflict_with_map() {
-        let m = HashMap::from_iter(vec![("a", true), ("b", false)]);
-        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
-
-        let v2 = BTreeSet::from_iter(vec!["c"]);
-
-        let lab2 = ClockLabel {
-            present: &v2,
-            clocks: &c2,
-        };
-
-        assert_eq!(lab2.has_conflict_with_map(&m), false);
-        assert_eq!(
-            lab2.has_conflict_with_map(&HashMap::from_iter(vec![("a", true), ("b", true)])),
-            true
-        );
-    }
-    #[test]
-    fn conflict_with_empty() {
-        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let c2 = BTreeSet::from_iter(vec!["b", "c"]);
-
-        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let v2 = BTreeSet::from_iter(vec![]);
-
-        let lab1 = ClockLabel {
-            present: &v1,
-            clocks: &c1,
-        };
-        let lab2 = ClockLabel {
-            present: &v2,
-            clocks: &c2,
-        };
-
-        assert_eq!(lab1.has_conflict(&lab2), true);
-        assert_eq!(lab2.has_conflict(&lab1), true);
+    fn invariants<L: Label<u32>>() -> impl Iterator<Item = (L, L, bool)> {
+        let tests = vec![
+            (
+                vec![(0, true), (1, false)],
+                vec![(1, true), (2, true)],
+                true,
+            ), // conflict intersection of clocks
+            (
+                vec![(0, true), (1, false)],
+                vec![(1, false), (2, true)],
+                false,
+            ), // non conflict intersection of clocks
+            (vec![(0, true), (1, false)], vec![], false), // one label is empty, no conflict
+            (
+                vec![(0, true), (1, false)],
+                vec![(2, true), (3, true)],
+                false,
+            ), // no intersection of clocks, no conflict
+        ];
+        tests.into_iter().map(|(left, right, conflict)| {
+            (
+                left.into_iter().collect(),
+                right.into_iter().collect(),
+                conflict,
+            )
+        })
     }
 
     #[test]
-    fn conflict_no_common_clocks() {
-        let c1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let c2 = BTreeSet::from_iter(vec!["c", "d"]);
+    fn test_classic() {
+        for (left, right, exp) in invariants::<ClockLabelClassic<u32>>() {
+            assert_eq!(left.has_conflict(&right), exp);
+        }
+    }
 
-        let v1 = BTreeSet::from_iter(vec!["a", "b"]);
-        let v2 = BTreeSet::from_iter(vec!["c", "d"]);
-
-        let lab1 = ClockLabel {
-            present: &v1,
-            clocks: &c1,
-        };
-        let lab2 = ClockLabel {
-            present: &v2,
-            clocks: &c2,
-        };
-
-        assert_eq!(lab1.has_conflict(&lab2), false);
-        assert_eq!(lab2.has_conflict(&lab1), false);
+    #[test]
+    fn test_bitmap() {
+        for (left, right, exp) in invariants::<BitmapLabel>() {
+            assert_eq!(left.has_conflict(&right), exp);
+        }
     }
 }
 
-impl<C: fmt::Display> fmt::Display for ClockLabel<'_, C> {
+impl<C: fmt::Display> fmt::Display for ClockLabelClassic<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "({})", self.present.iter().join("."))
+        write!(
+            f,
+            "({})",
+            self.0
+                .iter()
+                .filter_map(|(c, b)| if *b { Some(c) } else { None })
+                .join(".")
+        )
     }
 }
 
@@ -359,19 +357,22 @@ mod macros {
 }
 
 #[derive(Debug, Clone)]
-pub struct STS<C> {
+pub struct STS<C, L = ClockLabelClassic<C>> {
     name: String,
     states: Vec<Option<Arc<Expr<C>>>>,
     states_to_trans: Vec<Range<usize>>,
     clocks: BTreeSet<C>,
-    transitions: Vec<(BTreeSet<C>, Switch<Expr<C>, State<C>>)>,
+    transitions: Vec<(L, Switch<Expr<C>, State<C>>)>,
     initial_state: usize,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct StateRef(usize);
 
-impl<C> From<STSBuilder<C>> for STS<C> {
+impl<C: Clone, L: Label<C>> From<STSBuilder<C>> for STS<C, L>
+where
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
     fn from(system: STSBuilder<C>) -> Self {
         let name = system.name;
         let clocks = system.clocks;
@@ -394,7 +395,17 @@ impl<C> From<STSBuilder<C>> for STS<C> {
             let start = transitions.len();
             let finish = start + tr.len();
             states_to_trans[*index.get(&state).unwrap()] = start..finish;
-            transitions.extend(tr);
+            transitions.extend(tr.into_iter().map(|(l, s)| {
+                (
+                    clocks
+                        .iter()
+                        .map(|c| (c, false))
+                        .chain(l.iter().map(|c| (c, true)))
+                        .map(|(c, b)| (c.clone(), b))
+                        .collect(),
+                    s,
+                )
+            }));
         }
 
         Self {
@@ -408,7 +419,7 @@ impl<C> From<STSBuilder<C>> for STS<C> {
     }
 }
 
-impl<C> STS<C> {
+impl<C, L> STS<C, L> {
     pub fn initial(&self) -> StateRef {
         StateRef(self.initial_state)
     }
@@ -426,17 +437,14 @@ impl<C> STS<C> {
     pub fn transitions(
         &self,
         state: StateRef,
-    ) -> impl Iterator<Item = MergedTransition<C>> + Clone {
+    ) -> impl Iterator<Item = MergedTransition<C, L>> + Clone {
         self.transitions
             .get(self.states_to_trans[state.0].clone())
             .unwrap()
             .into_iter()
             .map(move |(label, switch)| MergedTransition {
                 from: state.clone(),
-                label: ClockLabel {
-                    present: label,
-                    clocks: &self.clocks,
-                },
+                label,
                 switch,
             })
     }
@@ -450,7 +458,7 @@ impl<C> STS<C> {
     }
 }
 
-impl<C: Clone + Hash + Eq> STS<C> {
+impl<C, L: Clone + Hash + Eq> STS<C, L> {
     pub fn squish(self) -> Self {
         let transitions = self
             .transitions
@@ -474,17 +482,14 @@ impl<C: Clone + Hash + Eq> STS<C> {
     }
 }
 
-impl<C> fmt::Display for STS<C> {
+impl<C, L> fmt::Display for STS<C, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
-impl<'a, C> From<&'a STS<C>> for petgraph::Graph<State<C>, ClockLabel<'a, C>>
-where
-    C: Clone,
-{
-    fn from(system: &'a STS<C>) -> Self {
+impl<'a, C, L> From<&'a STS<C, L>> for petgraph::Graph<State<C>, &'a L> {
+    fn from(system: &'a STS<C, L>) -> Self {
         let mut graph = petgraph::Graph::new();
         let nodes: HashMap<_, _> = system
             .full_states()
@@ -502,5 +507,50 @@ where
             }
         }
         graph
+    }
+}
+
+pub trait Label<C>: FromIterator<(C, bool)> + Default {
+    fn has_conflict(&self, rhs: &Self) -> bool;
+
+    fn with_capacity_hint(size: usize) -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BitmapLabel {
+    clocks: RoaringBitmap,
+    selection: RoaringBitmap,
+}
+
+impl FromIterator<(u32, bool)> for BitmapLabel {
+    fn from_iter<T: IntoIterator<Item = (u32, bool)>>(iter: T) -> Self {
+        let mut clocks = RoaringBitmap::new();
+        let mut selection = RoaringBitmap::new();
+        for (i, b) in iter {
+            clocks.push(i);
+            if b {
+                selection.push(i);
+            }
+        }
+        BitmapLabel { clocks, selection }
+    }
+}
+
+impl Label<u32> for BitmapLabel {
+    fn has_conflict(&self, rhs: &Self) -> bool {
+        !((&self.clocks & &rhs.clocks) & (&self.selection ^ &rhs.selection)).is_empty()
+    }
+}
+
+impl<'a, 'b> BitOr<&'b BitmapLabel> for &'a BitmapLabel {
+    type Output = BitmapLabel;
+
+    fn bitor(self, rhs: &'b BitmapLabel) -> Self::Output {
+        BitmapLabel {
+            clocks: &self.clocks | &rhs.clocks,
+            selection: &self.selection | &self.selection,
+        }
     }
 }
