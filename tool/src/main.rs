@@ -6,8 +6,10 @@ use std::path::PathBuf;
 
 use structopt::StructOpt;
 
-use ccsl::lccsl::automata::{STSBuilder, STS};
-use ccsl::lccsl::constraints::{Constraint, Delay, Precedence};
+use ccsl::lccsl::automata::{
+    ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StaticBitmapLabel, STS,
+};
+use ccsl::lccsl::constraints::{Constraint, Delay, Precedence, Specification};
 use ccsl::lccsl::gen::{
     circle_spec, star, to_precedence_spec, to_subclocking_spec, tree, TreeIterator,
 };
@@ -85,6 +87,11 @@ const SHORT_HEADERS: [&str; 8] = [
     "approx.solutions",
 ];
 
+//type L = ClockLabelClassic<u32>;
+//type L = RoaringBitmapLabel;
+//type L = StaticBitmapLabel;
+type L = DynBitmapLabel;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
 
@@ -153,6 +160,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
         }))
     {
+        let spec: Specification<usize> = spec.into();
+        let spec: Vec<Constraint<u32>> = spec.map(&mut |clock| *clock as u32).into();
         let len = spec.len();
         let permutations_amount: usize = (1..=len).product();
         let orig_hash = hash_spec(spec.iter());
@@ -163,10 +172,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             permutations_amount
         );
         {
-            let opti_spec = optimize_spec(&spec);
+            let opti_spec = optimize_spec::<u32, L>(&spec);
             let hashes = (&opti_spec).into_iter().map(|c| hash(c)).collect_vec();
-            let opti_spec = vec_into_vec(opti_spec);
-            let (analysis, _) = analyze_specification::<usize>(opti_spec, orig_hash, &hashes)?;
+            let opti_spec: Vec<STS<u32, L>> = vec_into_vec(opti_spec);
+            let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
             for el in analysis {
                 optimized_wrt.serialize(el)?;
             }
@@ -174,7 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for perm in spec.into_iter().permutations(len) {
             let hashes = (&perm).into_iter().map(|c| hash(c)).collect_vec();
 
-            let perm: Vec<STS<_>> = vec_into_vec(perm);
+            let perm: Vec<STS<u32, L>> = vec_into_vec(perm);
             let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
             for el in analysis {
                 raw_wrt.serialize(el)?;

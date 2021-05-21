@@ -15,9 +15,10 @@ itertools = "0.10"
 num = "0.4"
 rand = "0.8"
 permutation = "0.2.5"
-roaring = "0.6.6"
+roaring = "0.7"
+bitmaps = "3.1.0"
 
 [dependencies.derive_more]
 version = "0.99"
 default-features = false
-features = ["from"]
+features = ["from", "into"]

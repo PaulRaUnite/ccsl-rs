@@ -249,7 +249,7 @@ pub fn find_solutions<'a: 'b, 'b, C, L>(
 where
     C: Clone + Eq + Hash + Ord,
     L: Label<C>,
-    for<'c,'d> &'c L: BitOr<&'d L, Output = L>
+    for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
     rec_solutions(
         spec,
@@ -269,7 +269,7 @@ fn rec_solutions<'a, 'b, C, L>(
 where
     C: Clone + Eq + Hash + Ord,
     L: Label<C>,
-    for<'c,'d> &'c L: BitOr<&'d L, Output = L>
+    for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
     let (sts, spec) = spec.split_first()?;
     let (state, states) = states.split_first()?;
@@ -351,11 +351,11 @@ where
     aprox
 }
 
-pub fn generate_combinations<'a, C>(
-    spec: &'a [STS<C>],
+pub fn generate_combinations<'a, C, L>(
+    spec: &'a [STS<C, L>],
 ) -> impl Iterator<Item = Vec<StateRef>> + 'a + Send
 where
-    C: Ord + Hash + Clone + Send + Sync,
+    C: Ord + Hash + Clone,
 {
     spec.iter()
         .map(|sts| sts.states())

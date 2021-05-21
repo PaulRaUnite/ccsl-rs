@@ -22,7 +22,7 @@ use ccsl::lccsl::algo::{
     approx_conflict_map, combination_identifier, complexity_by_graph, find_solutions,
     generate_combinations, limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::{STSBuilder, STS};
+use ccsl::lccsl::automata::{Label, STSBuilder, STS};
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
@@ -35,6 +35,7 @@ use petgraph::Graph;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::ops::BitOr;
 
 pub fn write_graph<N: Display, E: Display>(
     g: &Graph<N, E>,
@@ -103,13 +104,15 @@ pub fn hash_spec<'a, C: 'a + Hash>(spec: impl IntoIterator<Item = &'a Constraint
     hash(&hashes)
 }
 
-pub fn analyze_specification<C>(
-    spec: Vec<STS<C>>,
+pub fn analyze_specification<C, L>(
+    spec: Vec<STS<C, L>>,
     original_hash: u64,
     hashes: &[u64],
 ) -> Result<(Vec<SpecCombParams>, SquishedParams), Box<dyn Error>>
 where
-    C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Send + Sync,
+    C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Sync + Send,
+    L: Label<C> + Clone + Hash + Eq + Sync,
+    for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
     let spec_hash = hash(&hashes);
 
@@ -143,7 +146,7 @@ where
             },
         }
     }));
-    let spec: Vec<STS<_>> = spec.into_iter().map(|c| c.squish()).collect();
+    let spec: Vec<STS<C, L>> = spec.into_iter().map(|c| c.squish()).collect();
 
     let comb: Vec<_> = spec
         .iter()

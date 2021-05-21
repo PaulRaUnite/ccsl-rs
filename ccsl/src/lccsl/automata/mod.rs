@@ -1,7 +1,9 @@
 use crate::lccsl::expressions::{BooleanExpression, Switch};
-use itertools::Itertools;
-use roaring::{RoaringBitmap, RoaringTreemap};
-use std::cmp::Ordering;
+use bitmaps::Bitmap;
+use itertools::{repeat_n, Itertools};
+use num::Integer;
+use roaring::RoaringBitmap;
+use std::cmp::{max, Ordering};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -105,7 +107,7 @@ impl<C, L: fmt::Display> fmt::Display for MergedTransition<'_, C, L> {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ClockLabelClassic<C>(BTreeMap<C, bool>);
 
-impl<C: Ord> Label<C> for ClockLabelClassic<C> {
+impl<C: Ord + Clone> Label<C> for ClockLabelClassic<C> {
     fn has_conflict(&self, rhs: &Self) -> bool {
         for (v, b) in &self.0 {
             match rhs.0.get(v) {
@@ -118,6 +120,19 @@ impl<C: Ord> Label<C> for ClockLabelClassic<C> {
 
     fn with_capacity_hint(size: usize) -> Self {
         Self(BTreeMap::new())
+    }
+}
+
+impl<'a, 'b, C: Ord + Clone> From<(&'a BTreeSet<C>, &'b BTreeSet<C>)> for ClockLabelClassic<C> {
+    fn from((clocks, label): (&'a BTreeSet<C>, &'b BTreeSet<C>)) -> Self {
+        Self(
+            clocks
+                .iter()
+                .map(|c| (c, false))
+                .chain(label.iter().map(|c| (c, true)))
+                .map(|(c, b)| (c.clone(), b))
+                .collect(),
+        )
     }
 }
 
@@ -161,9 +176,9 @@ impl<'a, 'b, C: Ord + Clone> BitOr<&'b ClockLabelClassic<C>> for &'a ClockLabelC
 
 #[cfg(test)]
 mod tests {
-    use crate::lccsl::automata::{BitmapLabel, ClockLabelClassic, Label};
-    use std::collections::BTreeSet;
-    use std::iter::FromIterator;
+    use crate::lccsl::automata::{
+        ClockLabelClassic, DynBitmapLabel, Label, RoaringBitmapLabel, StaticBitmapLabel,
+    };
 
     fn invariants<L: Label<u32>>() -> impl Iterator<Item = (L, L, bool)> {
         let tests = vec![
@@ -183,6 +198,16 @@ mod tests {
                 vec![(2, true), (3, true)],
                 false,
             ), // no intersection of clocks, no conflict
+            (
+                vec![(0, true), (1, false), (2, true)],
+                vec![(0, true), (1, false)],
+                false,
+            ), // clocks subset, conflict in the end
+            (
+                vec![(0, true), (1, false), (2, false)],
+                vec![(1, false), (2, false)],
+                false,
+            ), // clocks subset, conflict in the end
         ];
         tests.into_iter().map(|(left, right, conflict)| {
             (
@@ -201,8 +226,22 @@ mod tests {
     }
 
     #[test]
-    fn test_bitmap() {
-        for (left, right, exp) in invariants::<BitmapLabel>() {
+    fn test_roaring_bitmap() {
+        for (left, right, exp) in invariants::<RoaringBitmapLabel>() {
+            assert_eq!(left.has_conflict(&right), exp);
+        }
+    }
+    #[test]
+    fn test_static_bitmap() {
+        for (left, right, exp) in invariants::<StaticBitmapLabel>() {
+            println!("{:?},{:?}", left, right);
+            assert_eq!(left.has_conflict(&right), exp);
+        }
+    }
+    #[test]
+    fn test_dynamic_bitmap() {
+        for (left, right, exp) in invariants::<DynBitmapLabel>() {
+            println!("{:?},{:?}", left, right);
             assert_eq!(left.has_conflict(&right), exp);
         }
     }
@@ -369,7 +408,7 @@ pub struct STS<C, L = ClockLabelClassic<C>> {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct StateRef(usize);
 
-impl<C: Clone, L: Label<C>> From<STSBuilder<C>> for STS<C, L>
+impl<C: Ord + Clone, L: Label<C>> From<STSBuilder<C>> for STS<C, L>
 where
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
@@ -395,17 +434,10 @@ where
             let start = transitions.len();
             let finish = start + tr.len();
             states_to_trans[*index.get(&state).unwrap()] = start..finish;
-            transitions.extend(tr.into_iter().map(|(l, s)| {
-                (
-                    clocks
-                        .iter()
-                        .map(|c| (c, false))
-                        .chain(l.iter().map(|c| (c, true)))
-                        .map(|(c, b)| (c.clone(), b))
-                        .collect(),
-                    s,
-                )
-            }));
+            transitions.extend(
+                tr.into_iter()
+                    .map(|(label, s)| ((&clocks, &label).into(), s)),
+            );
         }
 
         Self {
@@ -510,7 +542,11 @@ impl<'a, C, L> From<&'a STS<C, L>> for petgraph::Graph<State<C>, &'a L> {
     }
 }
 
-pub trait Label<C>: FromIterator<(C, bool)> + Default {
+pub trait Label<C>:
+    for<'a, 'b> From<(&'a BTreeSet<C>, &'b BTreeSet<C>)> + FromIterator<(C, bool)> + Default
+where
+    C: Clone + Ord,
+{
     fn has_conflict(&self, rhs: &Self) -> bool;
 
     fn with_capacity_hint(size: usize) -> Self {
@@ -519,12 +555,14 @@ pub trait Label<C>: FromIterator<(C, bool)> + Default {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct BitmapLabel {
+pub struct RoaringBitmapLabel {
     clocks: RoaringBitmap,
     selection: RoaringBitmap,
 }
 
-impl FromIterator<(u32, bool)> for BitmapLabel {
+impl Eq for RoaringBitmapLabel {}
+
+impl FromIterator<(u32, bool)> for RoaringBitmapLabel {
     fn from_iter<T: IntoIterator<Item = (u32, bool)>>(iter: T) -> Self {
         let mut clocks = RoaringBitmap::new();
         let mut selection = RoaringBitmap::new();
@@ -534,23 +572,205 @@ impl FromIterator<(u32, bool)> for BitmapLabel {
                 selection.push(i);
             }
         }
-        BitmapLabel { clocks, selection }
+        RoaringBitmapLabel { clocks, selection }
     }
 }
 
-impl Label<u32> for BitmapLabel {
+impl Label<u32> for RoaringBitmapLabel {
     fn has_conflict(&self, rhs: &Self) -> bool {
         !((&self.clocks & &rhs.clocks) & (&self.selection ^ &rhs.selection)).is_empty()
     }
 }
 
-impl<'a, 'b> BitOr<&'b BitmapLabel> for &'a BitmapLabel {
-    type Output = BitmapLabel;
+impl<'a, 'b> BitOr<&'b RoaringBitmapLabel> for &'a RoaringBitmapLabel {
+    type Output = RoaringBitmapLabel;
 
-    fn bitor(self, rhs: &'b BitmapLabel) -> Self::Output {
-        BitmapLabel {
+    fn bitor(self, rhs: &'b RoaringBitmapLabel) -> Self::Output {
+        RoaringBitmapLabel {
             clocks: &self.clocks | &rhs.clocks,
             selection: &self.selection | &self.selection,
         }
+    }
+}
+
+impl Hash for RoaringBitmapLabel {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for x in self.clocks.iter().chain(self.selection.iter()) {
+            state.write_u32(x);
+        }
+    }
+}
+
+impl<'a, 'b> From<(&'a BTreeSet<u32>, &'b BTreeSet<u32>)> for RoaringBitmapLabel {
+    fn from((clocks, label): (&'a BTreeSet<u32>, &'b BTreeSet<u32>)) -> Self {
+        Self {
+            clocks: clocks.iter().map(|v| *v).collect(),
+            selection: label.iter().map(|v| *v).collect(),
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Default, Hash)]
+pub struct StaticBitmapLabel {
+    clocks: Bitmap<64>,
+    selection: Bitmap<64>,
+}
+
+impl Debug for StaticBitmapLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SB {:#066b} < {:#066b}",
+            self.clocks.as_value(),
+            self.selection.as_value()
+        )
+    }
+}
+
+impl Label<u32> for StaticBitmapLabel {
+    fn has_conflict(&self, rhs: &Self) -> bool {
+        !((self.clocks & rhs.clocks) & (self.selection ^ rhs.selection)).is_empty()
+    }
+}
+impl FromIterator<(u32, bool)> for StaticBitmapLabel {
+    fn from_iter<T: IntoIterator<Item = (u32, bool)>>(iter: T) -> Self {
+        let mut clocks = Bitmap::new();
+        let mut selection = Bitmap::new();
+        for (i, b) in iter {
+            clocks.set(i as usize, true);
+            if b {
+                selection.set(i as usize, true);
+            }
+        }
+        StaticBitmapLabel { clocks, selection }
+    }
+}
+
+impl<'a, 'b> From<(&'a BTreeSet<u32>, &'b BTreeSet<u32>)> for StaticBitmapLabel {
+    fn from((clocks, label): (&'a BTreeSet<u32>, &'b BTreeSet<u32>)) -> Self {
+        let mut c = Bitmap::new();
+        let mut s = Bitmap::new();
+        for i in clocks {
+            c.set(*i as usize, true);
+        }
+        for i in label {
+            s.set(*i as usize, true);
+        }
+        StaticBitmapLabel {
+            clocks: c,
+            selection: s,
+        }
+    }
+}
+
+impl<'a, 'b> BitOr<&'b StaticBitmapLabel> for &'a StaticBitmapLabel {
+    type Output = StaticBitmapLabel;
+
+    fn bitor(self, rhs: &'b StaticBitmapLabel) -> Self::Output {
+        StaticBitmapLabel {
+            clocks: self.clocks | rhs.clocks,
+            selection: self.selection | self.selection,
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Default, Hash)]
+pub struct DynBitmapLabel {
+    clocks: Vec<u8>,
+    selection: Vec<u8>,
+}
+
+impl Debug for DynBitmapLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for x in &self.clocks {
+            writeln!(f, "{:#010b}", x)?;
+        }
+        writeln!(f, ", ")?;
+        for x in &self.selection {
+            writeln!(f, "{:#010b}", x)?;
+        }
+        Ok(())
+    }
+}
+
+impl Label<u32> for DynBitmapLabel {
+    fn has_conflict(&self, rhs: &Self) -> bool {
+        let left = self.clocks.iter().zip(self.selection.iter());
+        let right = rhs.clocks.iter().zip(rhs.selection.iter());
+        let (long, short, diff) = if self.clocks.len() > rhs.clocks.len() {
+            (left, right, self.clocks.len() - rhs.clocks.len())
+        } else {
+            (right, left, rhs.clocks.len() - self.clocks.len())
+        };
+        long.zip(short.chain(repeat_n((&0u8, &0u8), diff)))
+            .any(|((lc, ls), (rc, rs))| ((lc & rc) & (ls ^ rs)) != 0)
+    }
+}
+
+impl<'a, 'b> BitOr<&'b DynBitmapLabel> for &'a DynBitmapLabel {
+    type Output = DynBitmapLabel;
+
+    fn bitor(self, rhs: &'b DynBitmapLabel) -> Self::Output {
+        let size = max(self.clocks.len(), rhs.clocks.len());
+        let mut clocks: Vec<u8> = Vec::with_capacity(size);
+        let mut selection: Vec<u8> = Vec::with_capacity(size);
+        clocks.extend(
+            self.clocks
+                .iter()
+                .chain(repeat_n(&0u8, size - self.clocks.len())),
+        );
+        selection.extend(
+            self.selection
+                .iter()
+                .chain(repeat_n(&0u8, size - self.selection.len())),
+        );
+
+        for (c, r) in clocks.iter_mut().zip(rhs.clocks.iter()) {
+            *c |= r;
+        }
+        for (c, r) in selection.iter_mut().zip(rhs.selection.iter()) {
+            *c |= r;
+        }
+
+        DynBitmapLabel { clocks, selection }
+    }
+}
+
+impl<'a, 'b> From<(&'a BTreeSet<u32>, &'b BTreeSet<u32>)> for DynBitmapLabel {
+    fn from((left, right): (&'a BTreeSet<u32>, &'b BTreeSet<u32>)) -> Self {
+        let (mut size, rem) = max(
+            left.iter().max().unwrap_or(&0),
+            right.iter().max().unwrap_or(&0),
+        )
+        .div_rem(&8);
+        if rem != 0 {
+            size += 1;
+        }
+        let size = size as usize;
+        let mut clocks = vec![0u8; size];
+        let mut selection = vec![0u8; size];
+        for i in left {
+            let (index, offset) = i.div_rem(&8u32);
+            clocks[index as usize] |= (1 << offset) as u8;
+        }
+        for i in right {
+            let (index, offset) = i.div_rem(&8u32);
+            selection[index as usize] |= (1 << offset) as u8;
+        }
+        Self { clocks, selection }
+    }
+}
+
+impl FromIterator<(u32, bool)> for DynBitmapLabel {
+    fn from_iter<T: IntoIterator<Item = (u32, bool)>>(iter: T) -> Self {
+        let mut clocks = BTreeSet::new();
+        let mut selection = BTreeSet::new();
+        for (c, b) in iter {
+            clocks.insert(c);
+            if b {
+                selection.insert(c);
+            }
+        }
+        (&clocks, &selection).into()
     }
 }
