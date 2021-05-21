@@ -4,28 +4,27 @@ use std::iter::once;
 use itertools::Itertools;
 use petgraph::Graph;
 
-use crate::lccsl::automata::{ClockLabel, Delta, State, STS};
-use crate::lccsl::expressions::BooleanExpression;
+use crate::lccsl::automata::{Label, StateRef, STS};
 use petgraph::prelude::NodeIndex;
 
-pub fn unfold_specification<'a, 'b, C>(
-    spec: &'a [STS<C>],
-    comb: &'b [&'a State<BooleanExpression<Delta<C>>>],
+pub fn unfold_specification<'a, 'b, C, L>(
+    spec: &'a [STS<C, L>],
+    comb: &'b [StateRef],
     trim: bool,
-) -> Graph<String, ClockLabel<'a, C>>
+) -> Graph<String, L>
 where
     C: Hash + Clone + Ord + 'a,
+    L: Label<C> + Clone,
 {
     let mut g = Graph::new();
     let root = g.add_node(format!("0:{}", spec[0]));
 
-    let mut previous_nodes: Vec<(Vec<ClockLabel<C>>, NodeIndex, bool)> =
-        vec![(vec![], root, false)];
+    let mut previous_nodes: Vec<(Vec<L>, NodeIndex, bool)> = vec![(vec![], root, false)];
 
     for (i, (c, s)) in spec.iter().zip(comb.iter()).enumerate() {
         previous_nodes = previous_nodes
             .iter()
-            .cartesian_product(c.transitions(s))
+            .cartesian_product(c.transitions(*s))
             .filter_map(|((before, prev, conflicted), t)| {
                 let mut conflicts = vec![];
                 for (i, t2) in before.iter().enumerate() {
@@ -57,7 +56,7 @@ where
                         before
                             .iter()
                             .map(|v| v.clone())
-                            .chain(once(t.label))
+                            .chain(once(t.label.clone()))
                             .collect(),
                         next,
                         conflicted,

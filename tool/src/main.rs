@@ -10,7 +10,10 @@ use structopt::StructOpt;
 
 use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
-use ccsl::lccsl::automata::STS;
+use ccsl::lccsl::automata::{
+    ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StaticBitmapLabel, STS,
+};
+use ccsl::lccsl::constraints::{Constraint, Delay, Precedence, Specification};
 use ccsl::lccsl::gen::{
     circle_spec, star, to_precedence_spec, to_subclocking_spec, tree, TreeIterator,
 };
@@ -30,7 +33,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::sync::Arc;
 use tool::{
-    analyze_specification, hash, hash_spec, write_graph_no_label, SpecCombParams, SquishedParams,
+    analyze_specification, hash, hash_spec, write_graph_no_label, SpecCombParams, SquishedParams, vec_into_vec,
 };
 
 #[derive(StructOpt, Debug)]
@@ -73,6 +76,11 @@ struct Opt {
     )]
     dir: PathBuf,
 }
+
+//type L = ClockLabelClassic<u32>;
+//type L = RoaringBitmapLabel;
+//type L = StaticBitmapLabel;
+type L = DynBitmapLabel;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
@@ -144,7 +152,7 @@ fn analysis_test_refactor(
     let mut optimized_buffer = Vec::with_capacity(1024);
     let mut main_buffer = Vec::with_capacity(1024);
     let mut squished_buffer = Vec::with_capacity(1024);
-    let gen_range = 3..=6;
+    let gen_range = 3..=7;
     for spec in gen_range
         .clone()
         .map(|size| circle_spec(size).unwrap())
@@ -171,6 +179,8 @@ fn analysis_test_refactor(
             })
         }))
     {
+        let spec: Specification<usize> = spec.into();
+        let spec: Vec<Constraint<u32>> = spec.map(&mut |clock| *clock as u32).into();
         let len = spec.len();
         let permutations_amount: usize = (1..=len).product();
         let orig_hash = hash_spec(spec.iter());
@@ -181,9 +191,9 @@ fn analysis_test_refactor(
             permutations_amount
         );
         {
-            let hashes = (&spec).into_iter().map(|c| hash(c)).collect_vec();
-            let spec: Vec<STS<usize>> = spec.clone().into_iter().map(Into::into).collect();
-            let opti_spec = optimize_spec(spec.as_slice());
+            let opti_spec = optimize_spec::<u32, L>(&spec);
+            let hashes = (&opti_spec).into_iter().map(|c| hash(c)).collect_vec();
+            let opti_spec: Vec<STS<u32, L>> = vec_into_vec(opti_spec);
             let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
             optimized_buffer.extend(analysis);
             if optimized_buffer.len() >= 4096 {
@@ -197,7 +207,7 @@ fn analysis_test_refactor(
         for perm in spec.into_iter().permutations(len) {
             let hashes = (&perm).into_iter().map(|c| hash(c)).collect_vec();
 
-            let perm: Vec<STS<_>> = perm.into_iter().map(Into::into).collect();
+            let perm: Vec<STS<u32, L>> = vec_into_vec(perm);
             let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
 
             main_buffer.extend(analysis);

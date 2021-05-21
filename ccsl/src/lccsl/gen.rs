@@ -4,7 +4,10 @@ use itertools::Itertools;
 use petgraph::prelude::*;
 use rand::prelude::*;
 
-use crate::lccsl::constraints::{Constraint, Delay, Precedence, Subclocking};
+use crate::lccsl::constraints::{
+    Causality, Constraint, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
+    Subclocking, Supremum, Union,
+};
 
 pub fn circle_spec(size: usize) -> Option<Vec<Constraint<usize>>> {
     if size <= 1 {
@@ -325,4 +328,80 @@ impl Iterator for TreeIterator {
 
         Some(g)
     }
+}
+
+pub fn random_specification(size: usize) -> Vec<Constraint<usize>> {
+    let mut spec = Vec::with_capacity(size);
+    let mut rng = rand::rngs::StdRng::from_entropy();
+    let clock_size = 2 * size;
+
+    for _ in 0..size {
+        let all = (0..rng.gen_range(1..clock_size))
+            .map(|_| rng.gen_range(0..clock_size))
+            .collect();
+        let out = rng.gen_range(0..clock_size);
+        let others = (0..rng.gen_range(1..clock_size))
+            .map(|_| {
+                let clock = rng.gen_range(0..clock_size);
+                if clock >= out {
+                    clock + 1
+                } else {
+                    clock
+                }
+            })
+            .collect();
+        let c: Constraint<usize> = match rng.gen_range(0..11) {
+            0 => Causality {
+                left: rng.gen_range(0..clock_size),
+                right: rng.gen_range(0..clock_size),
+                init: None,
+                max: None,
+            }
+            .into(),
+
+            1 => Precedence {
+                left: rng.gen_range(0..clock_size),
+                right: rng.gen_range(0..clock_size),
+                init: None,
+                max: None,
+            }
+            .into(),
+            2 => Subclocking {
+                left: rng.gen_range(0..clock_size),
+                right: rng.gen_range(0..clock_size),
+            }
+            .into(),
+            3 => Exclusion { clocks: all }.into(),
+            4 => Infinity { out, args: others }.into(),
+            5 => Supremum { out, args: others }.into(),
+            6 => Union { out, args: others }.into(),
+            7 => Intersection { out, args: others }.into(),
+            8 => Minus {
+                out,
+                base: rng.gen_range(0..clock_size),
+                args: others,
+            }
+            .into(),
+            9 => Repeat {
+                out,
+                every: Some(rng.gen_range(0..clock_size)),
+                base: rng.gen_range(0..clock_size),
+                from: Some(rng.gen_range(0..clock_size)),
+                up_to: None,
+            }
+            .into(),
+            10 => Delay {
+                out,
+                base: rng.gen_range(0..clock_size),
+                delay: rng.gen_range(0..clock_size),
+                on: None,
+            }
+            .into(),
+            _ => {
+                panic!();
+            }
+        };
+        spec.push(c);
+    }
+    spec
 }

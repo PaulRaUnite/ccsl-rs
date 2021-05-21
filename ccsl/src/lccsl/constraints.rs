@@ -5,12 +5,13 @@ use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 use std::iter::once;
 
-use derive_more::From;
+use derive_more::{From, Into};
 use itertools::Itertools;
 
-use crate::lccsl::automata::{Delta, LabeledTransitionSystem, State, STS};
+use crate::lccsl::automata::{Delta, Label, STSBuilder, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
+use std::ops::BitOr;
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Coincidence<C> {
@@ -32,6 +33,20 @@ pub struct Causality<C> {
     pub max: Option<usize>,
 }
 
+impl<C> Causality<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Causality<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Causality {
+            left: f(&self.left),
+            right: f(&self.right),
+            init: self.init,
+            max: self.max,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Precedence<C> {
     pub left: C,
@@ -40,9 +55,35 @@ pub struct Precedence<C> {
     pub max: Option<usize>,
 }
 
+impl<C> Precedence<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Precedence<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Precedence {
+            left: f(&self.left),
+            right: f(&self.right),
+            init: self.init,
+            max: self.max,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash)]
 pub struct Exclusion<C> {
     pub clocks: BTreeSet<C>,
+}
+
+impl<C> Exclusion<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Exclusion<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Exclusion {
+            clocks: self.clocks.iter().map(f).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash)]
@@ -51,10 +92,34 @@ pub struct Subclocking<C> {
     pub right: C,
 }
 
+impl<C> Subclocking<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Subclocking<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Subclocking {
+            left: f(&self.left),
+            right: f(&self.right),
+        }
+    }
+}
 #[derive(Debug, Clone, Hash)]
 pub struct Union<C> {
     pub out: C,
     pub args: BTreeSet<C>,
+}
+
+impl<C> Union<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Union<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Union {
+            out: f(&self.out),
+            args: self.args.iter().map(f).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -63,16 +128,53 @@ pub struct Intersection<C> {
     pub args: BTreeSet<C>,
 }
 
+impl<C> Intersection<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Intersection<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Intersection {
+            out: f(&self.out),
+            args: self.args.iter().map(f).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash)]
 pub struct Infinity<C> {
     pub out: C,
     pub args: BTreeSet<C>,
 }
 
+impl<C> Infinity<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Infinity<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Infinity {
+            out: f(&self.out),
+            args: self.args.iter().map(f).collect(),
+        }
+    }
+}
 #[derive(Debug, Clone, Hash)]
 pub struct Supremum<C> {
     pub out: C,
     pub args: BTreeSet<C>,
+}
+impl<C> Supremum<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Supremum<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Supremum {
+            out: f(&self.out),
+            args: self.args.iter().map(f).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash)]
@@ -84,6 +186,20 @@ pub struct Repeat<C> {
     pub up_to: Option<usize>,
 }
 
+impl<C> Repeat<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Repeat<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Repeat {
+            out: f(&self.out),
+            every: self.every,
+            base: f(&self.base),
+            from: self.from,
+            up_to: self.up_to,
+        }
+    }
+}
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Filter<C> {
     pub out: C,
@@ -92,6 +208,19 @@ pub struct Filter<C> {
     pub from: usize,
 }
 
+impl<C> Filter<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Filter<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Filter {
+            out: f(&self.out),
+            every: self.every,
+            base: f(&self.base),
+            from: self.from,
+        }
+    }
+}
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Delay<C> {
     pub out: C,
@@ -100,6 +229,19 @@ pub struct Delay<C> {
     pub on: Option<C>,
 }
 
+impl<C> Delay<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Delay<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Delay {
+            out: f(&self.out),
+            base: f(&self.base),
+            delay: self.delay,
+            on: self.on.as_ref().map(f),
+        }
+    }
+}
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct SampleOn<C> {
     pub out: C,
@@ -107,6 +249,18 @@ pub struct SampleOn<C> {
     pub on: Option<C>,
 }
 
+impl<C> SampleOn<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> SampleOn<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        SampleOn {
+            out: f(&self.out),
+            base: f(&self.base),
+            on: self.on.as_ref().map(f),
+        }
+    }
+}
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Diff<C> {
     pub out: C,
@@ -115,11 +269,38 @@ pub struct Diff<C> {
     pub up_to: usize,
 }
 
+impl<C> Diff<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Diff<B>
+    where
+        F: FnMut(&C) -> B,
+    {
+        Diff {
+            out: f(&self.out),
+            base: f(&self.base),
+            from: self.from,
+            up_to: self.up_to,
+        }
+    }
+}
 #[derive(Debug, Clone, Hash)]
 pub struct Minus<C> {
     pub out: C,
     pub base: C,
     pub args: BTreeSet<C>,
+}
+
+impl<C> Minus<C> {
+    pub(crate) fn map<B, F>(&self, f: &mut F) -> Minus<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Minus {
+            out: f(&self.out),
+            base: f(&self.base),
+            args: self.args.iter().map(f).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, From, Hash)]
@@ -137,7 +318,7 @@ pub enum Constraint<C> {
     Delay(Delay<C>),
 }
 
-impl<C> From<Constraint<C>> for STS<C>
+impl<C> From<Constraint<C>> for STSBuilder<C>
 where
     C: Hash + Clone + Ord + fmt::Display,
 {
@@ -157,7 +338,7 @@ where
         }
     }
 }
-//
+// TODO:
 // impl<C> Constraint<C> {
 //     pub fn rank(&self) -> usize {
 //         match self {
@@ -176,14 +357,14 @@ where
 //     }
 // }
 
-impl<C> From<Coincidence<C>> for STS<C>
+impl<C> From<Coincidence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Coincidence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let state = State::new(0).with_invariant(var.eq(0));
-        let mut system = STS::new(&c, state.clone());
+        let mut system = STSBuilder::new(&c, state.clone());
         tr!(system, &state => &state, {c.left, c.right,});
         tr!(system, &state => &state, {!c.left, !c.right,});
 
@@ -191,7 +372,7 @@ where
     }
 }
 
-impl<C> From<Alternates<C>> for STS<C>
+impl<C> From<Alternates<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -199,7 +380,7 @@ where
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let alt = State::new(1).with_invariant(var.eq(1));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &alt, {c.left, !c.right,});
         tr!(system, &start => &start, {!c.left, !c.right,});
@@ -210,7 +391,7 @@ where
     }
 }
 
-impl<C> From<Causality<C>> for STS<C>
+impl<C> From<Causality<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -218,7 +399,7 @@ where
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
-        let mut system: STS<C> = Precedence {
+        let mut system: STSBuilder<C> = Precedence {
             left: c.left.clone(),
             right: c.right.clone(),
             init: None,
@@ -231,7 +412,7 @@ where
     }
 }
 
-impl<C> From<Precedence<C>> for STS<C>
+impl<C> From<Precedence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -243,7 +424,7 @@ where
 
         let start = State::new(0).with_invariant(var.eq(0));
         let next = State::new(1).with_invariant(var.more(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
         tr!(system, &start => &next, {c.left, !c.right,});
 
         tr!(system, &next => &next, {c.left, !c.right,});
@@ -258,13 +439,13 @@ where
     }
 }
 
-impl<C> From<Exclusion<C>> for STS<C>
+impl<C> From<Exclusion<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Exclusion<C>) -> Self {
         let start = State::new(0);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &start, {});
         for clock in c.clocks {
@@ -274,14 +455,14 @@ where
     }
 }
 
-impl<C> From<Subclocking<C>> for STS<C>
+impl<C> From<Subclocking<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Subclocking<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &start, {c.left,});
         tr!(system, &start => &start, {c.left, c.right,});
@@ -290,7 +471,7 @@ where
     }
 }
 
-impl<C> From<Union<C>> for STS<C>
+impl<C> From<Union<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -301,7 +482,7 @@ where
             invariant = invariant & var.more_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         for i in 1..=c.args.len() {
             for comb in c.args.iter().combinations(i) {
@@ -320,7 +501,7 @@ where
     }
 }
 
-impl<C> From<Intersection<C>> for STS<C>
+impl<C> From<Intersection<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
@@ -331,7 +512,7 @@ where
             invariant = invariant & var.less_eq(0);
         }
         let start = State::new(0).with_invariant(invariant);
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         system.add_transition(
             &start,
@@ -346,14 +527,14 @@ where
         system
     }
 }
-impl<C> From<Delay<C>> for STS<C>
+impl<C> From<Delay<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: Delay<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
-        let mut system = STS::new(&c, start.clone());
+        let mut system = STSBuilder::new(&c, start.clone());
 
         let mut last = start.clone();
         for i in 1..=c.delay {
@@ -368,37 +549,37 @@ where
     }
 }
 
-impl<C> From<Infinity<C>> for STS<C> {
+impl<C> From<Infinity<C>> for STSBuilder<C> {
     fn from(_: Infinity<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Supremum<C>> for STS<C> {
+impl<C> From<Supremum<C>> for STSBuilder<C> {
     fn from(_: Supremum<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Minus<C>> for STS<C> {
+impl<C> From<Minus<C>> for STSBuilder<C> {
     fn from(_: Minus<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Diff<C>> for STS<C> {
+impl<C> From<Diff<C>> for STSBuilder<C> {
     fn from(_: Diff<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<SampleOn<C>> for STS<C> {
+impl<C> From<SampleOn<C>> for STSBuilder<C> {
     fn from(_: SampleOn<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Filter<C>> for STS<C> {
+impl<C> From<Filter<C>> for STSBuilder<C> {
     fn from(_: Filter<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Repeat<C>> for STS<C> {
+impl<C> From<Repeat<C>> for STSBuilder<C> {
     fn from(_: Repeat<C>) -> Self {
         todo!()
     }
@@ -410,7 +591,7 @@ mod tests {
 
     #[test]
     fn into_automaton() {
-        let a: STS<&str> = Coincidence {
+        let a: STSBuilder<&str> = Coincidence {
             left: "a",
             right: "b",
         }
@@ -477,5 +658,52 @@ impl<C: fmt::Display> fmt::Display for Intersection<C> {
 impl<C: fmt::Display> fmt::Display for Delay<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}${}", self.out, self.base, self.delay)
+    }
+}
+
+impl<C, L> From<Constraint<C>> for STS<C, L>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+    L: Label<C>,
+    for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
+{
+    fn from(v: Constraint<C>) -> Self {
+        let builder: STSBuilder<C> = v.into();
+        builder.into()
+    }
+}
+
+#[derive(Debug, From, Into, Clone)]
+pub struct Specification<C>(Vec<Constraint<C>>);
+
+impl<C> Constraint<C> {
+    pub fn map<B, F>(&self, f: &mut F) -> Constraint<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        match self {
+            Constraint::Causality(c) => c.map(f).into(),
+            Constraint::Precedence(c) => c.map(f).into(),
+            Constraint::SubClock(c) => c.map(f).into(),
+            Constraint::Exclusion(c) => c.map(f).into(),
+            Constraint::Infinity(c) => c.map(f).into(),
+            Constraint::Supremum(c) => c.map(f).into(),
+            Constraint::Union(c) => c.map(f).into(),
+            Constraint::Intersection(c) => c.map(f).into(),
+            Constraint::Minus(c) => c.map(f).into(),
+            Constraint::Repeat(c) => c.map(f).into(),
+            Constraint::Delay(c) => c.map(f).into(),
+        }
+    }
+}
+
+impl<C> Specification<C> {
+    pub fn map<B, F>(&self, f: &mut F) -> Specification<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Ord,
+    {
+        Specification(self.0.iter().map(move |c| c.map(f)).collect())
     }
 }
