@@ -99,7 +99,7 @@ impl SpecCombParams {
 
     pub fn batch(
         schema: SchemaRef,
-        data: Vec<SpecCombParams>,
+        data: &Vec<SpecCombParams>,
     ) -> Result<RecordBatch, Box<dyn Error>> {
         let size = data.len();
         let mut spec_vec = Vec::with_capacity(size);

@@ -99,32 +99,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut main_parquet_wrt = ArrowWriter::try_new(
             File::create("/home/paulra/Code/ccsl-rs/plotter/data.parquet")?,
             spec_comb_schema.clone(),
-            Some(
-                WriterProperties::builder()
-                    .set_dictionary_enabled(false)
-                    .set_compression(Compression::SNAPPY)
-                    .build(),
-            ),
+            None,
         )?;
         let mut squished_parquet_wrt = ArrowWriter::try_new(
             File::create("/home/paulra/Code/ccsl-rs/plotter/squished.parquet")?,
             squished_schema.clone(),
-            Some(
-                WriterProperties::builder()
-                    .set_dictionary_enabled(false)
-                    .set_compression(Compression::SNAPPY)
-                    .build(),
-            ),
+            None,
         )?;
         let mut optimized_parquet_wrt = ArrowWriter::try_new(
             File::create("/home/paulra/Code/ccsl-rs/plotter/optimized.parquet")?,
             spec_comb_schema.clone(),
-            Some(
-                WriterProperties::builder()
-                    .set_dictionary_enabled(false)
-                    .set_compression(Compression::SNAPPY)
-                    .build(),
-            ),
+            None,
         )?;
 
         analysis_test_refactor(
@@ -156,8 +141,10 @@ fn analysis_test_refactor(
     squished_parquet_wrt: &mut ArrowWriter<File>,
     optimized_parquet_wrt: &mut ArrowWriter<File>,
 ) -> Result<(), Box<dyn Error>> {
+    let mut optimized_buffer = Vec::with_capacity(1024);
+    let mut main_buffer = Vec::with_capacity(1024);
     let mut squished_buffer = Vec::with_capacity(1024);
-    let gen_range = 3..=7;
+    let gen_range = 3..=6;
     for spec in gen_range
         .clone()
         .map(|size| circle_spec(size).unwrap())
@@ -198,9 +185,13 @@ fn analysis_test_refactor(
             let spec: Vec<STS<usize>> = spec.clone().into_iter().map(Into::into).collect();
             let opti_spec = optimize_spec(spec.as_slice());
             let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
-            {
-                let batch = SpecCombParams::batch(spec_comb_schema.clone(), analysis)?;
-                optimized_parquet_wrt.write(&batch)?;
+            optimized_buffer.extend(analysis);
+            if optimized_buffer.len() >= 4096 {
+                optimized_parquet_wrt.write(&SpecCombParams::batch(
+                    spec_comb_schema.clone(),
+                    &optimized_buffer,
+                )?)?;
+                optimized_buffer.clear();
             }
         }
         for perm in spec.into_iter().permutations(len) {
@@ -208,9 +199,14 @@ fn analysis_test_refactor(
 
             let perm: Vec<STS<_>> = perm.into_iter().map(Into::into).collect();
             let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
-            {
-                let batch = SpecCombParams::batch(spec_comb_schema.clone(), analysis)?;
-                main_parquet_wrt.write(&batch)?;
+
+            main_buffer.extend(analysis);
+            if main_buffer.len() >= 4096 {
+                main_parquet_wrt.write(&SpecCombParams::batch(
+                    spec_comb_schema.clone(),
+                    &main_buffer,
+                )?)?;
+                main_buffer.clear();
             }
 
             squished_buffer.push(squished);
@@ -223,6 +219,14 @@ fn analysis_test_refactor(
             }
         }
     }
+    optimized_parquet_wrt.write(&SpecCombParams::batch(
+        spec_comb_schema.clone(),
+        &optimized_buffer,
+    )?)?;
+    main_parquet_wrt.write(&SpecCombParams::batch(
+        spec_comb_schema.clone(),
+        &main_buffer,
+    )?)?;
     squished_parquet_wrt.write(&SquishedParams::batch(
         squished_schema.clone(),
         &squished_buffer,
