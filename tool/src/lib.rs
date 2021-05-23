@@ -93,9 +93,9 @@ impl SpecCombParams {
     pub fn schema() -> Schema {
         let criteria_type = Criteria::arrow_type();
         Schema::new(vec![
-            Field::new("spec", DataType::Int64, false),
-            Field::new("variant", DataType::Int64, false),
-            Field::new("comb", DataType::Int64, false),
+            Field::new("spec", DataType::UInt64, false),
+            Field::new("variant", DataType::UInt64, false),
+            Field::new("comb", DataType::UInt64, false),
             Field::new("real", criteria_type.clone(), false),
             Field::new("limit", criteria_type.clone(), false),
             Field::new("approx", criteria_type, false),
@@ -120,11 +120,9 @@ impl SpecCombParams {
         let mut limit_solution_vec = Vec::with_capacity(size);
         let mut approx_solution_vec = Vec::with_capacity(size);
         for e in data {
-            // FIXME: u64 is not supported properly by parquet
-            // (see https://github.com/apache/arrow-rs/pull/258).
-            spec_vec.push(e.spec as i64);
-            var_vec.push(e.variant as i64);
-            comb_vec.push(e.comb as i64);
+            spec_vec.push(e.spec as u64);
+            var_vec.push(e.variant as u64);
+            comb_vec.push(e.comb as u64);
             real_test_vec.push(e.real.test as u64);
             real_down_vec.push(e.real.down as u64);
             real_solution_vec.push(e.real.solutions as u64);
@@ -136,9 +134,9 @@ impl SpecCombParams {
             approx_solution_vec.push(e.approx.solutions as u64);
         }
 
-        let spec_vec = Arc::new(Int64Array::from(spec_vec));
-        let var_vec = Arc::new(Int64Array::from(var_vec));
-        let comb_vec = Arc::new(Int64Array::from(comb_vec));
+        let spec_vec = Arc::new(UInt64Array::from(spec_vec));
+        let var_vec = Arc::new(UInt64Array::from(var_vec));
+        let comb_vec = Arc::new(UInt64Array::from(comb_vec));
 
         let real_test_vec: ArrayRef = Arc::new(UInt64Array::from(real_test_vec));
         let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
@@ -198,8 +196,8 @@ impl SquishedParams {
     pub fn schema() -> Schema {
         let criteria_type = Criteria::arrow_type();
         Schema::new(vec![
-            Field::new("spec", DataType::Int64, false),
-            Field::new("variant", DataType::Int64, false),
+            Field::new("spec", DataType::UInt64, false),
+            Field::new("variant", DataType::UInt64, false),
             Field::new("limit", criteria_type.clone(), false),
             Field::new("approx", criteria_type, false),
         ])
@@ -219,8 +217,8 @@ impl SquishedParams {
         let mut limit_solution_vec = Vec::with_capacity(size);
         let mut approx_solution_vec = Vec::with_capacity(size);
         for e in data {
-            spec_vec.push(e.spec as i64);
-            var_vec.push(e.variant as i64);
+            spec_vec.push(e.spec as u64);
+            var_vec.push(e.variant as u64);
             limit_test_vec.push(e.limit.test as u64);
             limit_down_vec.push(e.limit.down as u64);
             limit_solution_vec.push(e.limit.solutions as u64);
@@ -229,8 +227,8 @@ impl SquishedParams {
             approx_solution_vec.push(e.approx.solutions as u64);
         }
 
-        let spec_vec: ArrayRef = Arc::new(Int64Array::from(spec_vec));
-        let var_vec: ArrayRef = Arc::new(Int64Array::from(var_vec));
+        let spec_vec: ArrayRef = Arc::new(UInt64Array::from(spec_vec));
+        let var_vec: ArrayRef = Arc::new(UInt64Array::from(var_vec));
         let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
         let approx_test_vec: ArrayRef = Arc::new(UInt64Array::from(approx_test_vec));
         let limit_down_vec: ArrayRef = Arc::new(UInt64Array::from(limit_down_vec));
