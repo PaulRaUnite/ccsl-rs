@@ -6,7 +6,6 @@ extern crate itertools;
 extern crate num;
 extern crate permutation;
 extern crate rand;
-extern crate sorted_iter;
 extern crate thiserror;
 
 #[cfg(test)]

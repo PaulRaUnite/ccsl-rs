@@ -21,7 +21,7 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
-use arrow::array::{Array, ArrayRef, Int64Array, StructArray, StructBuilder, UInt64Array};
+use arrow::array::{ArrayRef, Int64Array, StructArray, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::algo::{
@@ -40,8 +40,8 @@ use petgraph::Graph;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::ops::BitOr;
+use std::sync::Arc;
 
 pub fn write_graph<N: Display, E: Display>(
     g: &Graph<N, E>,

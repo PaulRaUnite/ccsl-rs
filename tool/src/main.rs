@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 use arrow::datatypes::Schema;
-use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::automata::{
     ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StaticBitmapLabel, STS,
 };
@@ -20,20 +19,11 @@ use ccsl::lccsl::gen::{
 use ccsl::lccsl::opti::optimize_spec;
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
-use parquet::basic;
-use parquet::basic::Compression;
-use parquet::basic::{IntType, LogicalType, Repetition};
-use parquet::column::writer::ColumnWriter;
-use parquet::file::properties::WriterProperties;
-use parquet::file::writer::{FileWriter, SerializedFileWriter, TryClone};
-use parquet::schema::types::{Type, TypePtr};
-use serde::Serialize;
-use std::borrow::BorrowMut;
 use std::fs::File;
-use std::io::BufWriter;
 use std::sync::Arc;
 use tool::{
-    analyze_specification, hash, hash_spec, write_graph_no_label, SpecCombParams, SquishedParams, vec_into_vec,
+    analyze_specification, hash, hash_spec, vec_into_vec, write_graph_no_label, SpecCombParams,
+    SquishedParams,
 };
 
 #[derive(StructOpt, Debug)]
@@ -149,9 +139,9 @@ fn analysis_test_refactor(
     squished_parquet_wrt: &mut ArrowWriter<File>,
     optimized_parquet_wrt: &mut ArrowWriter<File>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut optimized_buffer = Vec::with_capacity(1024);
-    let mut main_buffer = Vec::with_capacity(1024);
-    let mut squished_buffer = Vec::with_capacity(1024);
+    let mut optimized_buffer = Vec::with_capacity(8192);
+    let mut main_buffer = Vec::with_capacity(8192);
+    let mut squished_buffer = Vec::with_capacity(8192);
     let gen_range = 3..=7;
     for spec in gen_range
         .clone()
@@ -196,7 +186,7 @@ fn analysis_test_refactor(
             let opti_spec: Vec<STS<u32, L>> = vec_into_vec(opti_spec);
             let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
             optimized_buffer.extend(analysis);
-            if optimized_buffer.len() >= 4096 {
+            if optimized_buffer.len() >= 6144 {
                 optimized_parquet_wrt.write(&SpecCombParams::batch(
                     spec_comb_schema.clone(),
                     &optimized_buffer,
@@ -211,7 +201,7 @@ fn analysis_test_refactor(
             let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
 
             main_buffer.extend(analysis);
-            if main_buffer.len() >= 4096 {
+            if main_buffer.len() >= 6144 {
                 main_parquet_wrt.write(&SpecCombParams::batch(
                     spec_comb_schema.clone(),
                     &main_buffer,
@@ -220,7 +210,7 @@ fn analysis_test_refactor(
             }
 
             squished_buffer.push(squished);
-            if squished_buffer.len() == squished_buffer.capacity() {
+            if squished_buffer.len() >= 6144 {
                 squished_parquet_wrt.write(&SquishedParams::batch(
                     squished_schema.clone(),
                     &squished_buffer,
