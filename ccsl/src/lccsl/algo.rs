@@ -7,7 +7,7 @@ use itertools::Itertools;
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Label, MergedTransition, State, StateRef, STS};
+use crate::lccsl::automata::{Label, MergedTransition, StateRef, STS};
 use num::rational::Ratio;
 use std::collections::hash_map::DefaultHasher;
 use std::ops::BitOr;
@@ -57,11 +57,11 @@ where
     let mut g = Graph::new();
     let nodes: Vec<_> = spec
         .iter()
-        .enumerate()
-        .map(|(i, c)| {
+        .zip(comb.iter())
+        .map(|(c, s)| {
             g.add_node(ConflictSource {
                 name: (&c).to_string(),
-                transitions: c.transitions_len(comb[i]),
+                transitions: c.transitions_len(*s),
             })
         })
         .collect();

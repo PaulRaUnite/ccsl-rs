@@ -13,7 +13,6 @@ use num::ToPrimitive;
 
 use serde::Serialize;
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs::{create_dir_all, File};
@@ -21,18 +20,19 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
-use arrow::array::{ArrayRef, Int64Array, StructArray, UInt64Array};
+use arrow::array::{ArrayRef, Int64Array, StructArray, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::algo::{
     approx_conflict_map, combination_identifier, complexity_by_graph, find_solutions,
     generate_combinations, limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::{Label, STSBuilder, STS};
+use ccsl::lccsl::automata::{Label, STSBuilder, StateRef, STS};
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
 };
+use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
@@ -50,7 +50,7 @@ pub fn write_graph<N: Display, E: Display>(
 ) -> Result<(), Box<dyn Error>> {
     create_dir_all(dir)?;
     let mut file = BufWriter::new(File::create(dir.join(file).with_extension("dot"))?);
-    let dot = Dot::with_config(g, &[EdgeNoLabel]);
+    let dot = Dot::with_config(g, &[]);
     writeln!(&mut file, "{}", &dot)?;
     Ok(())
 }
@@ -76,6 +76,7 @@ pub struct SpecCombParams {
     pub spec: u64,
     pub variant: u64,
     pub comb: u64,
+    pub size: u8,
     pub real: Criteria,
     pub limit: Criteria,
     pub approx: Criteria,
@@ -96,6 +97,7 @@ impl SpecCombParams {
             Field::new("spec", DataType::UInt64, false),
             Field::new("variant", DataType::UInt64, false),
             Field::new("comb", DataType::UInt64, false),
+            Field::new("size", DataType::UInt8, false),
             Field::new("real", criteria_type.clone(), false),
             Field::new("limit", criteria_type.clone(), false),
             Field::new("approx", criteria_type, false),
@@ -110,6 +112,7 @@ impl SpecCombParams {
         let mut spec_vec = Vec::with_capacity(size);
         let mut var_vec = Vec::with_capacity(size);
         let mut comb_vec = Vec::with_capacity(size);
+        let mut size_vec = Vec::with_capacity(size);
         let mut real_test_vec = Vec::with_capacity(size);
         let mut limit_test_vec = Vec::with_capacity(size);
         let mut approx_test_vec = Vec::with_capacity(size);
@@ -123,6 +126,7 @@ impl SpecCombParams {
             spec_vec.push(e.spec as u64);
             var_vec.push(e.variant as u64);
             comb_vec.push(e.comb as u64);
+            size_vec.push(e.size);
             real_test_vec.push(e.real.test as u64);
             real_down_vec.push(e.real.down as u64);
             real_solution_vec.push(e.real.solutions as u64);
@@ -137,6 +141,7 @@ impl SpecCombParams {
         let spec_vec = Arc::new(UInt64Array::from(spec_vec));
         let var_vec = Arc::new(UInt64Array::from(var_vec));
         let comb_vec = Arc::new(UInt64Array::from(comb_vec));
+        let size_vec = Arc::new(UInt8Array::from(size_vec));
 
         let real_test_vec: ArrayRef = Arc::new(UInt64Array::from(real_test_vec));
         let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
@@ -171,7 +176,7 @@ impl SpecCombParams {
 
         let result = RecordBatch::try_new(
             schema,
-            vec![spec_vec, var_vec, comb_vec, real, limit, approx],
+            vec![spec_vec, var_vec, comb_vec, size_vec, real, limit, approx],
         )?;
         Ok(result)
     }
@@ -181,6 +186,7 @@ impl SpecCombParams {
 pub struct SquishedParams {
     pub spec: u64,
     pub variant: u64,
+    pub size: u8,
     pub limit: Criteria,
     pub approx: Criteria,
 }
@@ -198,6 +204,7 @@ impl SquishedParams {
         Schema::new(vec![
             Field::new("spec", DataType::UInt64, false),
             Field::new("variant", DataType::UInt64, false),
+            Field::new("size", DataType::UInt8, false),
             Field::new("limit", criteria_type.clone(), false),
             Field::new("approx", criteria_type, false),
         ])
@@ -210,6 +217,7 @@ impl SquishedParams {
         let size = data.len();
         let mut spec_vec = Vec::with_capacity(size);
         let mut var_vec = Vec::with_capacity(size);
+        let mut size_vec = Vec::with_capacity(size);
         let mut limit_test_vec = Vec::with_capacity(size);
         let mut approx_test_vec = Vec::with_capacity(size);
         let mut limit_down_vec = Vec::with_capacity(size);
@@ -219,6 +227,7 @@ impl SquishedParams {
         for e in data {
             spec_vec.push(e.spec as u64);
             var_vec.push(e.variant as u64);
+            size_vec.push(e.size);
             limit_test_vec.push(e.limit.test as u64);
             limit_down_vec.push(e.limit.down as u64);
             limit_solution_vec.push(e.limit.solutions as u64);
@@ -229,6 +238,8 @@ impl SquishedParams {
 
         let spec_vec: ArrayRef = Arc::new(UInt64Array::from(spec_vec));
         let var_vec: ArrayRef = Arc::new(UInt64Array::from(var_vec));
+        let size_vec: ArrayRef = Arc::new(UInt8Array::from(size_vec));
+
         let limit_test_vec: ArrayRef = Arc::new(UInt64Array::from(limit_test_vec));
         let approx_test_vec: ArrayRef = Arc::new(UInt64Array::from(approx_test_vec));
         let limit_down_vec: ArrayRef = Arc::new(UInt64Array::from(limit_down_vec));
@@ -250,7 +261,8 @@ impl SquishedParams {
             (solution_f, approx_solution_vec),
         ]));
 
-        let result = RecordBatch::try_new(schema, vec![spec_vec, var_vec, limit, approx])?;
+        let result =
+            RecordBatch::try_new(schema, vec![spec_vec, var_vec, size_vec, limit, approx])?;
         Ok(result)
     }
 }
@@ -293,48 +305,53 @@ pub fn hash_spec<'a, C: 'a + Hash>(spec: impl IntoIterator<Item = &'a Constraint
 }
 
 pub fn analyze_specification<C, L>(
-    spec: Vec<STS<C, L>>,
-    original_hash: u64,
-    hashes: &[u64],
+    spec: &Vec<STS<C, L>>,
+    spec_id: u64,
+    perm_id: u64,
 ) -> Result<(Vec<SpecCombParams>, SquishedParams), Box<dyn Error>>
 where
     C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Sync + Send,
     L: Label<C> + Clone + Hash + Eq + Sync,
     for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
-    let spec_hash = hash(&hashes);
-
     let mut analytics = Vec::with_capacity(spec.iter().map(|c| c.states().size_hint().0).product());
-    analytics.par_extend(generate_combinations(&spec).par_bridge().map(|comb| {
-        let comb_hash = combination_identifier(&hashes, &comb);
-        let mut visitor = CountingVisitor::new();
-        let actual = find_solutions(&spec, &comb, Some(&mut visitor));
-        let dep_map = limit_conflict_map(&spec, &comb);
-        let limit = complexity_by_graph(&dep_map);
-        let dep_map = approx_conflict_map(&spec, &comb);
-        let approx = complexity_by_graph(&dep_map);
-        SpecCombParams {
-            spec: original_hash,
-            variant: spec_hash,
-            comb: comb_hash,
-            real: Criteria {
-                test: visitor.test,
-                down: visitor.down,
-                solutions: actual,
-            },
-            limit: Criteria {
-                test: limit.tests,
-                down: limit.downs,
-                solutions: limit.solutions,
-            },
-            approx: Criteria {
-                test: approx.tests.to_usize().unwrap_or_default(),
-                down: approx.downs.to_usize().unwrap_or_default(),
-                solutions: approx.solutions.to_usize().unwrap_or_default(),
-            },
-        }
-    }));
-    let spec: Vec<STS<C, L>> = spec.into_iter().map(|c| c.squish()).collect();
+    analytics.par_extend(
+        generate_combinations(spec)
+            .enumerate()
+            .par_bridge()
+            .map(|(i, comb)| {
+                //let comb_id = combination_identifier(&hashes, &comb);
+                let comb_id = i as u64;
+                let mut visitor = CountingVisitor::new();
+                let actual = find_solutions(spec, &comb, Some(&mut visitor));
+                let dep_map = limit_conflict_map(spec, &comb);
+                let limit = complexity_by_graph(&dep_map);
+                let dep_map = approx_conflict_map(spec, &comb);
+                let approx = complexity_by_graph(&dep_map);
+                SpecCombParams {
+                    spec: spec_id,
+                    variant: perm_id,
+                    comb: comb_id,
+                    size: spec.len() as u8,
+                    real: Criteria {
+                        test: visitor.test,
+                        down: visitor.down,
+                        solutions: actual,
+                    },
+                    limit: Criteria {
+                        test: limit.tests,
+                        down: limit.downs,
+                        solutions: limit.solutions,
+                    },
+                    approx: Criteria {
+                        test: approx.tests.to_usize().unwrap_or_default(),
+                        down: approx.downs.to_usize().unwrap_or_default(),
+                        solutions: approx.solutions.to_usize().unwrap_or_default(),
+                    },
+                }
+            }),
+    );
+    let spec: Vec<STS<C, L>> = spec.iter().map(|c| c.clone().squish()).collect();
 
     let comb: Vec<_> = spec
         .iter()
@@ -347,8 +364,9 @@ where
     let approx = complexity_by_graph(&dep_map);
 
     let squished = SquishedParams {
-        spec: original_hash,
-        variant: spec_hash,
+        spec: spec_id,
+        variant: perm_id,
+        size: spec.len() as u8,
         limit: Criteria {
             test: limit.tests,
             down: limit.downs,
@@ -379,24 +397,24 @@ macro_rules! collection {
 }
 
 pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
-    let mut map: HashMap<&str, STS<&str>> = HashMap::new();
-    map.insert(
+    let mut map: Vec<(&str, STS<&str>)> = Vec::with_capacity(100);
+    map.push((
         "coincidence",
         Into::<STSBuilder<_>>::into(Coincidence {
             left: "a",
             right: "b",
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "alternates",
         Into::<STSBuilder<_>>::into(Alternates {
             left: "a",
             right: "b",
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "causality",
         Into::<STSBuilder<_>>::into(Causality {
             left: "a",
@@ -405,8 +423,8 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
             max: None,
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "precedence",
         Into::<STSBuilder<_>>::into(Precedence {
             left: "a",
@@ -415,39 +433,39 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
             max: None,
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "exclusion",
         Into::<STSBuilder<_>>::into(Exclusion {
             clocks: collection!("a", "b"),
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "subclocking",
         Into::<STSBuilder<_>>::into(Subclocking {
             left: "a",
             right: "b",
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "intersection",
         Into::<STSBuilder<_>>::into(Intersection {
             out: "i",
             args: collection!("a", "b"),
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "union",
         Into::<STSBuilder<_>>::into(Union {
             out: "u",
             args: collection!("a", "b"),
         })
         .into(),
-    );
-    map.insert(
+    ));
+    map.push((
         "delay",
         Into::<STSBuilder<_>>::into(Delay {
             out: "d",
@@ -456,11 +474,25 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
             on: None,
         })
         .into(),
-    );
-    for (name, c) in map.into_iter() {
-        let g: petgraph::Graph<_, _> = (&c).into();
+    ));
+    for (name, c) in map.iter() {
+        let g: petgraph::Graph<_, _> = c.into();
         write_graph(&g, dir, name)?;
     }
+    let spec = map.into_iter().map(|(_, v)| v).take(4).collect_vec();
+    let comb = spec.iter().map(|c| c.initial()).collect_vec();
+    write_graph(
+        &unfold_specification(&spec, &comb, true),
+        dir,
+        "trimmed.dot",
+    )?;
+    write_graph(&unfold_specification(&spec, &comb, false), dir, "full.dot")?;
+    let spec = [1, 2, 0, 3].iter().map(|i| spec[*i].clone()).collect_vec();
+    write_graph(
+        &unfold_specification(&spec, &spec.iter().map(|c| c.initial()).collect_vec(), true),
+        dir,
+        "reordered.dot",
+    )?;
     Ok(())
 }
 
@@ -470,4 +502,19 @@ mod test {
     fn casting() {
         assert_eq!((u64::MAX as i64) as u64, u64::MAX);
     }
+}
+
+pub fn decode_spec(
+    gen: impl IntoIterator<Item = (u64, Vec<Constraint<usize>>)>,
+    spec_id: u64,
+) -> Option<Vec<Constraint<usize>>> {
+    None
+}
+
+pub fn decode_perm(spec: &Vec<Constraint<usize>>, perm_id: u64) -> Option<Vec<Constraint<usize>>> {
+    None
+}
+
+pub fn decode_comb(spec: &Vec<Constraint<usize>>, comb_id: u64) -> Option<Vec<StateRef>> {
+    None
 }

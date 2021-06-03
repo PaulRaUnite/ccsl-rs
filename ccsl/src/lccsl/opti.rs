@@ -29,14 +29,19 @@ where
         .node_indices()
         .into_iter()
         .map(|n| {
-            conflict_map
-                .edges_directed(n, Direction::Outgoing)
-                .map(|e| {
-                    let weight = e.weight();
-                    Ratio::from(weight.all) - weight.solutions
-                })
-                .sum::<Ratio<usize>>()
-                / Ratio::from(conflict_map.edges_directed(n, Direction::Outgoing).count())
+            let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
+            if count == 0 {
+                Ratio::from(0)
+            } else {
+                conflict_map
+                    .edges_directed(n, Direction::Outgoing)
+                    .map(|e| {
+                        let weight = e.weight();
+                        Ratio::from(weight.all) - weight.solutions
+                    })
+                    .sum::<Ratio<usize>>()
+                    / Ratio::from(count)
+            }
         })
         .collect_vec();
     sort(weights).apply_slice(spec)

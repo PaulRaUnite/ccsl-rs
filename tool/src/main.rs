@@ -2,28 +2,29 @@ extern crate arrow;
 extern crate csv;
 extern crate itertools;
 extern crate parquet;
+extern crate rand;
 
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use structopt::StructOpt;
 
-use arrow::datatypes::Schema;
 use ccsl::lccsl::automata::{
     ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StaticBitmapLabel, STS,
 };
 use ccsl::lccsl::constraints::{Constraint, Delay, Precedence, Specification};
 use ccsl::lccsl::gen::{
-    circle_spec, star, to_precedence_spec, to_subclocking_spec, tree, TreeIterator,
+    circle_spec, random_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
 use ccsl::lccsl::opti::optimize_spec;
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
+use rand::{RngCore, SeedableRng};
 use std::fs::File;
 use std::sync::Arc;
 use tool::{
-    analyze_specification, hash, hash_spec, vec_into_vec, write_graph_no_label, SpecCombParams,
-    SquishedParams,
+    all_constraints, analyze_specification, hash_spec, vec_into_vec, write_graph_no_label,
+    SpecCombParams, SquishedParams,
 };
 
 #[derive(StructOpt, Debug)]
@@ -81,47 +82,92 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{:?}", to_precedence_spec(&g));
     println!("{:?}", to_subclocking_spec(&g));
 
-    let g = tree(5);
-    write_graph_no_label(&g, &opt.dir.join("gen"), "tree")?;
-
-    println!("{:?}", to_precedence_spec(&g));
-    println!("{:?}", to_subclocking_spec(&g));
-
     for (i, g) in TreeIterator::new(9).enumerate() {
         write_graph_no_label(&g, &opt.dir.join("gen/test"), &i.to_string())?;
     }
 
-    let spec_comb_schema = Arc::new(SpecCombParams::schema());
-    let squished_schema = Arc::new(SquishedParams::schema());
-    {
-        let mut main_parquet_wrt = ArrowWriter::try_new(
-            File::create("/home/paulra/Code/ccsl-rs/plotter/data.parquet")?,
-            spec_comb_schema.clone(),
-            None,
-        )?;
-        let mut squished_parquet_wrt = ArrowWriter::try_new(
-            File::create("/home/paulra/Code/ccsl-rs/plotter/squished.parquet")?,
-            squished_schema.clone(),
-            None,
-        )?;
-        let mut optimized_parquet_wrt = ArrowWriter::try_new(
-            File::create("/home/paulra/Code/ccsl-rs/plotter/optimized.parquet")?,
-            spec_comb_schema.clone(),
-            None,
-        )?;
-
-        analysis_test_refactor(
-            spec_comb_schema,
-            &squished_schema,
-            &mut main_parquet_wrt,
-            &mut squished_parquet_wrt,
-            &mut optimized_parquet_wrt,
-        )?;
-
-        main_parquet_wrt.close()?;
-        squished_parquet_wrt.close()?;
-        optimized_parquet_wrt.close()?;
+    let data_dir = Path::new("/home/paulra/Code/ccsl-rs/plotter/data/");
+    let gen_range = 3..=7;
+    analyse_specs(
+        data_dir.join("circle"),
+        (3..=8)
+            .map(|size| circle_spec(size).unwrap())
+            .enumerate()
+            .map(|(i, t)| (i as u64, t)),
+    )?;
+    analyse_specs(
+        data_dir.join("star/precedence"),
+        (3..8)
+            .map(|size| {
+                to_precedence_spec(&star(size, 3).unwrap())
+                    .into_iter()
+                    .map(Into::into)
+                    .collect_vec()
+            })
+            .enumerate()
+            .map(|(i, t)| (i as u64, t)),
+    )?;
+    analyse_specs(
+        data_dir.join("star/subclocking"),
+        (3..10)
+            .map(|size| {
+                to_subclocking_spec(&star(size, 3).unwrap())
+                    .into_iter()
+                    .map(Into::into)
+                    .collect_vec()
+            })
+            .enumerate()
+            .map(|(i, t)| (i as u64, t)),
+    )?;
+    analyse_specs(
+        data_dir.join("tree/precedence"),
+        gen_range
+            .clone()
+            .flat_map(|size| {
+                TreeIterator::new(size + 1).map(|tr| {
+                    to_precedence_spec(&tr)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect_vec()
+                })
+            })
+            .enumerate()
+            .map(|(i, t)| (i as u64, t)),
+    )?;
+    analyse_specs(
+        data_dir.join("tree/subclocking"),
+        gen_range.clone().flat_map(|size| {
+            TreeIterator::new(size + 1)
+                .map(|tr| {
+                    to_subclocking_spec(&tr)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect_vec()
+                })
+                .enumerate()
+                .map(|(i, t)| (i as u64, t))
+        }),
+    )?;
+    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut specs = Vec::new();
+    for size in 3..=8 {
+        for _ in 0..(100 - 10 * size) {
+            let seed = rng.next_u64();
+            specs.push((seed, random_specification(seed, size)));
+        }
     }
+    analyse_specs(data_dir.join("random"), specs)?;
+    // println!(
+    //     "{:?}",
+    //     TreeIterator::new(4)
+    //         .map(|tr| {
+    //             to_precedence_spec(&tr)
+    //                 .into_iter()
+    //                 .map(Into::<Constraint<usize>>::into)
+    //                 .collect_vec()
+    //         })
+    //         .collect_vec()[1]
+    // );
     // for name in names {
     //     Command::new("dot")
     //         .arg("-O")
@@ -132,59 +178,46 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn analysis_test_refactor(
-    spec_comb_schema: Arc<Schema>,
-    squished_schema: &Arc<Schema>,
-    main_parquet_wrt: &mut ArrowWriter<File>,
-    squished_parquet_wrt: &mut ArrowWriter<File>,
-    optimized_parquet_wrt: &mut ArrowWriter<File>,
+fn analyse_specs(
+    dir: impl AsRef<Path>,
+    specs: impl IntoIterator<Item = (u64, Vec<Constraint<usize>>)>,
 ) -> Result<(), Box<dyn Error>> {
+    let spec_comb_schema = Arc::new(SpecCombParams::schema());
+    let squished_schema = Arc::new(SquishedParams::schema());
+
+    std::fs::create_dir_all(dir.as_ref())?;
+    let mut main_parquet_wrt = ArrowWriter::try_new(
+        File::create(dir.as_ref().join("data.parquet"))?,
+        spec_comb_schema.clone(),
+        None,
+    )?;
+    let mut squished_parquet_wrt = ArrowWriter::try_new(
+        File::create(dir.as_ref().join("squished.parquet"))?,
+        squished_schema.clone(),
+        None,
+    )?;
+    let mut optimized_parquet_wrt = ArrowWriter::try_new(
+        File::create(dir.as_ref().join("optimized.parquet"))?,
+        spec_comb_schema.clone(),
+        None,
+    )?;
+
     let mut optimized_buffer = Vec::with_capacity(8192);
     let mut main_buffer = Vec::with_capacity(8192);
     let mut squished_buffer = Vec::with_capacity(8192);
-    let gen_range = 3..=7;
-    for spec in gen_range
-        .clone()
-        .map(|size| circle_spec(size).unwrap())
-        .chain(gen_range.clone().map(|size| {
-            to_precedence_spec(&star(size, 3).unwrap())
-                .into_iter()
-                .map(Into::into)
-                .collect_vec()
-        }))
-        .chain(gen_range.clone().flat_map(|size| {
-            TreeIterator::new(size + 1).map(|tr| {
-                to_precedence_spec(&tr)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect_vec()
-            })
-        }))
-        .chain(gen_range.clone().flat_map(|size| {
-            TreeIterator::new(size + 1).map(|tr| {
-                to_subclocking_spec(&tr)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect_vec()
-            })
-        }))
-    {
+    for (spec_id, spec) in specs {
         let spec: Specification<usize> = spec.into();
         let spec: Vec<Constraint<u32>> = spec.map(&mut |clock| *clock as u32).into();
         let len = spec.len();
+        if len > (u8::MAX as usize) {
+            panic!("lehmer lib requires u8 size for permutation indexes");
+        }
         let permutations_amount: usize = (1..=len).product();
-        let orig_hash = hash_spec(spec.iter());
-        println!(
-            "step: {}/{} ({})",
-            len,
-            gen_range.end(),
-            permutations_amount
-        );
+        println!("step: {} ({})", len, permutations_amount);
         {
             let opti_spec = optimize_spec::<u32, L>(&spec);
-            let hashes = (&opti_spec).into_iter().map(|c| hash(c)).collect_vec();
             let opti_spec: Vec<STS<u32, L>> = vec_into_vec(opti_spec);
-            let (analysis, _) = analyze_specification(opti_spec, orig_hash, &hashes)?;
+            let (analysis, _) = analyze_specification(&opti_spec, spec_id, 0)?;
             optimized_buffer.extend(analysis);
             if optimized_buffer.len() >= 6144 {
                 optimized_parquet_wrt.write(&SpecCombParams::batch(
@@ -194,11 +227,13 @@ fn analysis_test_refactor(
                 optimized_buffer.clear();
             }
         }
-        for perm in spec.into_iter().permutations(len) {
-            let hashes = (&perm).into_iter().map(|c| hash(c)).collect_vec();
-
-            let perm: Vec<STS<u32, L>> = vec_into_vec(perm);
-            let (analysis, squished) = analyze_specification(perm, orig_hash, &hashes)?;
+        let spec: Vec<STS<u32, L>> = vec_into_vec(spec);
+        let mut perm = Vec::with_capacity(len);
+        for perm_vec in (0..spec.len() as u8).permutations(len) {
+            perm.clear();
+            let perm_id = lehmer::Lehmer::from_permutation(&perm_vec).to_decimal();
+            perm.extend(perm_vec.into_iter().map(|i| spec[i as usize].clone()));
+            let (analysis, squished) = analyze_specification(&perm, spec_id, perm_id as u64)?;
 
             main_buffer.extend(analysis);
             if main_buffer.len() >= 6144 {
@@ -219,6 +254,7 @@ fn analysis_test_refactor(
             }
         }
     }
+
     optimized_parquet_wrt.write(&SpecCombParams::batch(
         spec_comb_schema.clone(),
         &optimized_buffer,
@@ -231,5 +267,9 @@ fn analysis_test_refactor(
         squished_schema.clone(),
         &squished_buffer,
     )?)?;
+
+    main_parquet_wrt.close()?;
+    squished_parquet_wrt.close()?;
+    optimized_parquet_wrt.close()?;
     Ok(())
 }

@@ -60,19 +60,6 @@ pub fn star(nodes: usize, width: usize) -> Option<DiGraph<usize, ()>> {
     }
 }
 
-pub fn tree(nodes: usize) -> DiGraph<usize, ()> {
-    let mut rng = rand::rngs::StdRng::seed_from_u64(3453452);
-    let mut g = DiGraph::with_capacity(nodes, nodes - 1);
-    g.add_node(0);
-
-    for node in 1..nodes {
-        let target_node = g.add_node(node);
-        let source_node = NodeIndex::<u32>::new(rng.gen_range(0..node));
-        g.add_edge(source_node, target_node, ());
-    }
-    g
-}
-
 pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Precedence<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
     spec.extend(g.raw_edges().into_iter().map(|e| Precedence {
@@ -330,19 +317,28 @@ impl Iterator for TreeIterator {
     }
 }
 
-pub fn random_specification(size: usize) -> Vec<Constraint<usize>> {
+pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(size);
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let clock_size = 2 * size;
 
     for _ in 0..size {
         let all = (0..rng.gen_range(1..clock_size))
             .map(|_| rng.gen_range(0..clock_size))
             .collect();
+        let left = rng.gen_range(0..clock_size);
+        let right = {
+            let clock = rng.gen_range(0..clock_size - 1);
+            if clock >= left {
+                clock + 1
+            } else {
+                clock
+            }
+        };
         let out = rng.gen_range(0..clock_size);
         let others = (0..rng.gen_range(1..clock_size))
             .map(|_| {
-                let clock = rng.gen_range(0..clock_size);
+                let clock = rng.gen_range(0..clock_size - 1);
                 if clock >= out {
                     clock + 1
                 } else {
@@ -350,32 +346,28 @@ pub fn random_specification(size: usize) -> Vec<Constraint<usize>> {
                 }
             })
             .collect();
-        let c: Constraint<usize> = match rng.gen_range(0..11) {
+        let c: Constraint<usize> = match rng.gen_range(0..6) {
             0 => Causality {
-                left: rng.gen_range(0..clock_size),
-                right: rng.gen_range(0..clock_size),
+                left,
+                right,
                 init: None,
                 max: None,
             }
             .into(),
 
             1 => Precedence {
-                left: rng.gen_range(0..clock_size),
-                right: rng.gen_range(0..clock_size),
+                left,
+                right,
                 init: None,
                 max: None,
             }
             .into(),
-            2 => Subclocking {
-                left: rng.gen_range(0..clock_size),
-                right: rng.gen_range(0..clock_size),
-            }
-            .into(),
+            2 => Subclocking { left, right }.into(),
             3 => Exclusion { clocks: all }.into(),
-            4 => Infinity { out, args: others }.into(),
-            5 => Supremum { out, args: others }.into(),
-            6 => Union { out, args: others }.into(),
-            7 => Intersection { out, args: others }.into(),
+            4 => Union { out, args: others }.into(),
+            5 => Intersection { out, args: others }.into(),
+            6 => Infinity { out, args: others }.into(),
+            7 => Supremum { out, args: others }.into(),
             8 => Minus {
                 out,
                 base: rng.gen_range(0..clock_size),
@@ -392,7 +384,7 @@ pub fn random_specification(size: usize) -> Vec<Constraint<usize>> {
             .into(),
             10 => Delay {
                 out,
-                base: rng.gen_range(0..clock_size),
+                base: left,
                 delay: rng.gen_range(0..clock_size),
                 on: None,
             }

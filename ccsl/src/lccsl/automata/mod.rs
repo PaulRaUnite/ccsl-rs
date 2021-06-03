@@ -59,7 +59,7 @@ impl<C> Ord for State<C> {
 
 impl<C> Hash for State<C> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        &self.id.hash(state);
+        self.id.hash(state);
     }
 }
 
@@ -738,11 +738,11 @@ impl<'a, 'b> BitOr<&'b DynBitmapLabel> for &'a DynBitmapLabel {
 
 impl<'a, 'b> From<(&'a BTreeSet<u32>, &'b BTreeSet<u32>)> for DynBitmapLabel {
     fn from((left, right): (&'a BTreeSet<u32>, &'b BTreeSet<u32>)) -> Self {
-        let (mut size, rem) = max(
+        let (mut size, rem) = (max(
             left.iter().max().unwrap_or(&0),
             right.iter().max().unwrap_or(&0),
-        )
-        .div_rem(&8);
+        ) + 1)
+            .div_rem(&8);
         if rem != 0 {
             size += 1;
         }

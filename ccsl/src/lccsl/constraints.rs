@@ -554,6 +554,7 @@ impl<C> From<Infinity<C>> for STSBuilder<C> {
         todo!()
     }
 }
+
 impl<C> From<Supremum<C>> for STSBuilder<C> {
     fn from(_: Supremum<C>) -> Self {
         todo!()
