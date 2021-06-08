@@ -1,30 +1,37 @@
+extern crate arrow;
+#[macro_use]
+extern crate concat_arrays;
 extern crate itertools;
 extern crate num;
 extern crate rayon;
 extern crate serde;
-#[macro_use]
-extern crate concat_arrays;
-extern crate arrow;
-
-use rayon::iter::ParallelBridge;
-use rayon::prelude::{ParallelExtend, ParallelIterator};
-
-use num::ToPrimitive;
-
-use serde::Serialize;
 
 use std::error::Error;
+use std::fmt;
 use std::fmt::Display;
 use std::fs::{create_dir_all, File};
+use std::hash::Hash;
 use std::io::BufWriter;
 use std::io::Write;
+use std::ops::BitOr;
 use std::path::Path;
+use std::sync::Arc;
 
 use arrow::array::{ArrayRef, StructArray, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
+use itertools::Itertools;
+use num::ToPrimitive;
+use permutation::Permutation;
+use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
+use petgraph::dot::Dot;
+use petgraph::{Directed, Graph};
+use rayon::iter::ParallelBridge;
+use rayon::prelude::{ParallelExtend, ParallelIterator};
+use serde::Serialize;
+
 use ccsl::lccsl::algo::{
-    approx_conflict_map, complexity_by_graph, find_solutions, generate_combinations,
+    approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
     limit_conflict_map, CountingVisitor,
 };
 use ccsl::lccsl::automata::{Label, STSBuilder, StateRef, STS};
@@ -33,16 +40,6 @@ use ccsl::lccsl::constraints::{
     Subclocking, Union,
 };
 use ccsl::lccsl::vizualization::unfold_specification;
-use itertools::Itertools;
-use permutation::Permutation;
-use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
-use petgraph::dot::Dot;
-use petgraph::{Directed, Graph};
-use std::collections::hash_map::DefaultHasher;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::BitOr;
-use std::sync::Arc;
 
 pub fn write_graph<N: Display, E: Display>(
     g: &Graph<N, E>,
@@ -303,20 +300,6 @@ impl Criteria {
     }
 }
 
-pub fn hash(h: impl Hash) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    h.hash(&mut hasher);
-    hasher.finish()
-}
-
-pub fn hash_spec<'a, C: 'a + Hash>(spec: impl IntoIterator<Item = &'a Constraint<C>>) -> u64 {
-    let hashes = spec
-        .into_iter()
-        .map(|c: &Constraint<C>| hash(c))
-        .collect_vec();
-    hash(&hashes)
-}
-
 pub fn analyze_specification<C, L>(
     spec: &Vec<STS<C, L>>,
     spec_id: u64,
@@ -338,9 +321,9 @@ where
                 let mut visitor = CountingVisitor::new();
                 let actual = find_solutions(spec, &comb, Some(&mut visitor));
                 let dep_map = limit_conflict_map(spec, &comb);
-                let limit = complexity_by_graph(&dep_map);
+                let limit = complexity_from_graph(&dep_map);
                 let dep_map = approx_conflict_map(spec, &comb);
-                let approx = complexity_by_graph(&dep_map);
+                let approx = complexity_from_graph(&dep_map);
                 SpecCombParams {
                     spec: spec_id,
                     variant: perm_id,
@@ -365,16 +348,12 @@ where
             }),
     );
     let spec: Vec<STS<C, L>> = spec.iter().map(|c| c.clone().squish()).collect();
+    let comb: Vec<StateRef> = spec.iter().map(|c| c.initial()).collect_vec();
 
-    let comb: Vec<_> = spec
-        .iter()
-        .map(|c| c.states().exactly_one())
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
     let dep_map = limit_conflict_map(&spec, &comb);
-    let limit = complexity_by_graph(&dep_map);
+    let limit = complexity_from_graph(&dep_map);
     let dep_map = approx_conflict_map(&spec, &comb);
-    let approx = complexity_by_graph(&dep_map);
+    let approx = complexity_from_graph(&dep_map);
 
     let squished = SquishedParams {
         spec: spec_id,

@@ -23,7 +23,7 @@ use rand::{RngCore, SeedableRng};
 use std::fs::File;
 use std::sync::Arc;
 use tool::{
-    analyze_specification, gen_spec, gen_spec_flat, hash_spec, inverse_graph, vec_into_vec,
+    analyze_specification, gen_spec, gen_spec_flat, inverse_graph, vec_into_vec,
     write_graph_no_label, SpecCombParams, SquishedParams,
 };
 

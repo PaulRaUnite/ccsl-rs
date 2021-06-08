@@ -118,7 +118,7 @@ impl<C: Ord + Clone> Label<C> for ClockLabelClassic<C> {
         false
     }
 
-    fn with_capacity_hint(size: usize) -> Self {
+    fn with_capacity_hint(_: usize) -> Self {
         Self(BTreeMap::new())
     }
 }

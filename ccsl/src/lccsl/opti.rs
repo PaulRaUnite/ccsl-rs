@@ -4,12 +4,12 @@ use crate::lccsl::constraints::Constraint;
 use itertools::Itertools;
 use num::rational::Ratio;
 use permutation::{sort, Permutation};
-use petgraph::algo::{connected_components, min_spanning_tree};
+use petgraph::algo::min_spanning_tree;
 use petgraph::data::FromElements;
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::unionfind::UnionFind;
 use petgraph::visit::{Bfs, Dfs, EdgeRef, NodeIndexable};
-use petgraph::{Direction, Graph, Undirected};
+use petgraph::{Direction, Graph};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -26,12 +26,7 @@ where
     sort(weights)
 }
 
-fn spec_weights<C, L>(
-    spec: &[Constraint<C>],
-) -> (
-    Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
-    Vec<(Ratio<usize>, usize)>,
-)
+fn squished_map<C, L>(spec: &[Constraint<C>]) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
@@ -48,6 +43,22 @@ where
         .collect_vec();
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
     let conflict_map = approx_conflict_map(&squished_spec, &comb);
+    conflict_map
+}
+
+fn spec_weights<C, L>(
+    spec: &[Constraint<C>],
+) -> (
+    Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+    Vec<(Ratio<usize>, usize)>,
+)
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
     let weights: Vec<(Ratio<usize>, usize)> = conflict_map
         .node_indices()
         .into_iter()
@@ -95,9 +106,9 @@ where
     F: Fn(&[Constraint<C>]) -> Permutation,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let (map, weights) = spec_weights(spec);
+    let conflict_map = squished_map(spec);
     let mut spec_perm = Vec::with_capacity(spec.len());
-    for comp_map in get_components(&map) {
+    for comp_map in get_components(&conflict_map) {
         let comp = comp_map.iter().map(|i| spec[*i].clone()).collect_vec();
         let comp_perm = mapper(&comp);
         spec_perm.extend(comp_perm.apply_slice(comp_map));
@@ -108,9 +119,15 @@ where
         (0..spec.len()).sum(),
         "{:?} {:?}",
         &spec_perm,
-        &map
+        &conflict_map
     );
-    assert_eq!(spec_perm.len(), spec.len(), "{:?} {:?}", &spec_perm, &map);
+    assert_eq!(
+        spec_perm.len(),
+        spec.len(),
+        "{:?} {:?}",
+        &spec_perm,
+        &conflict_map
+    );
     Permutation::from_vec(spec_perm)
 }
 

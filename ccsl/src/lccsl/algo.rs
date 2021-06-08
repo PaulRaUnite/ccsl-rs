@@ -1,17 +1,16 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+use std::ops::BitOr;
 
 use itertools::Itertools;
+use num::rational::Ratio;
 use petgraph::prelude::EdgeRef;
 use petgraph::{Direction, Graph};
 
 use crate::lccsl::automata::{Label, MergedTransition, StateRef, STS};
-use num::rational::Ratio;
-use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::ops::BitOr;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConflictEffect<R> {
@@ -48,70 +47,37 @@ impl fmt::Display for ConflictSource {
     }
 }
 
-pub fn approx_conflict_map<'a, C, L>(
-    spec: &'a [STS<C, L>],
+pub fn approx_conflict_map<C, L>(
+    spec: &[STS<C, L>],
     comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord,
     L: Label<C>,
 {
-    let mut index: HashMap<&C, Vec<(usize, &STS<C, L>)>> = HashMap::new();
-    for (i, constraint) in spec.iter().enumerate() {
-        for clock in constraint.clocks() {
-            index
-                .entry(clock)
-                .or_insert_with(|| vec![])
-                .push((i, constraint));
-        }
-    }
-
-    let mut g = Graph::new();
-    let nodes: Vec<_> = spec
-        .iter()
-        .zip(comb.iter())
-        .map(|(c, s)| {
-            g.add_node(ConflictSource {
-                name: (&c).to_string(),
-                transitions: c.transitions_len(*s),
-            })
-        })
-        .collect();
-    for (_, constraints) in index.into_iter() {
-        for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
-            let n1 = nodes[i1];
-            let n2 = nodes[i2];
-            let sol_len1 = c1.transitions_len(comb[i1]);
-            let sol_len2 = c2.transitions_len(comb[i2]);
-            let approx = approx_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2]));
-            g.add_edge(
-                n1,
-                n2,
-                ConflictEffect {
-                    solutions: Ratio::new(approx, sol_len1),
-                    all: sol_len2,
-                },
-            );
-            g.add_edge(
-                n2,
-                n1,
-                ConflictEffect {
-                    solutions: Ratio::new(approx, sol_len2),
-                    all: sol_len1,
-                },
-            );
-        }
-    }
-    g
+    generic_conflict_map(spec, comb, approx_solutions_edger)
 }
 
-pub fn limit_conflict_map<'a, C, L>(
-    spec: &'a [STS<C, L>],
+pub fn limit_conflict_map<C, L>(
+    spec: &[STS<C, L>],
     comb: &[StateRef],
 ) -> Graph<ConflictSource, ConflictEffect<usize>>
 where
     C: Clone + Hash + Ord,
     L: Label<C>,
+{
+    generic_conflict_map(spec, comb, limit_solutions_edger)
+}
+
+pub fn generic_conflict_map<C, L, R, F>(
+    spec: &[STS<C, L>],
+    comb: &[StateRef],
+    edger: F,
+) -> Graph<ConflictSource, ConflictEffect<R>>
+where
+    C: Clone + Hash + Ord,
+    L: Label<C>,
+    F: Fn(&STS<C, L>, &STS<C, L>, StateRef, StateRef) -> (ConflictEffect<R>, ConflictEffect<R>),
 {
     let mut index: HashMap<&C, Vec<(usize, &STS<C, L>)>> = HashMap::new();
     for (i, constraint) in spec.iter().enumerate() {
@@ -138,27 +104,36 @@ where
         for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
             let n1 = nodes[i1];
             let n2 = nodes[i2];
-            let sol_len1 = c1.transitions_len(comb[i1]);
-            let sol_len2 = c2.transitions_len(comb[i2]);
-            g.add_edge(
-                n1,
-                n2,
-                ConflictEffect {
-                    solutions: limit_solutions(c1.transitions(comb[i1]), c2.transitions(comb[i2])),
-                    all: sol_len2,
-                },
-            );
-            g.add_edge(
-                n2,
-                n1,
-                ConflictEffect {
-                    solutions: limit_solutions(c2.transitions(comb[i2]), c1.transitions(comb[i1])),
-                    all: sol_len1,
-                },
-            );
+            let (direct, backwards) = edger(c1, c2, comb[i1], comb[i2]);
+            g.add_edge(n1, n2, direct);
+            g.add_edge(n2, n1, backwards);
         }
     }
     g
+}
+
+fn limit_solutions_edger<C, L>(
+    left: &STS<C, L>,
+    right: &STS<C, L>,
+    left_state: StateRef,
+    right_state: StateRef,
+) -> (ConflictEffect<usize>, ConflictEffect<usize>)
+where
+    C: Eq + Hash + Clone + Ord,
+    L: Label<C>,
+{
+    let sol_len1 = left.transitions_len(left_state);
+    let sol_len2 = right.transitions_len(right_state);
+
+    let direct = ConflictEffect {
+        solutions: limit_solutions(left.transitions(left_state), right.transitions(right_state)),
+        all: sol_len2,
+    };
+    let backward = ConflictEffect {
+        solutions: limit_solutions(right.transitions(right_state), left.transitions(left_state)),
+        all: sol_len1,
+    };
+    (direct, backward)
 }
 
 fn limit_solutions<'a, C, L>(
@@ -179,6 +154,32 @@ where
         .max()
         .unwrap_or(0)
 }
+
+fn approx_solutions_edger<C, L>(
+    left: &STS<C, L>,
+    right: &STS<C, L>,
+    left_state: StateRef,
+    right_state: StateRef,
+) -> (ConflictEffect<Ratio<usize>>, ConflictEffect<Ratio<usize>>)
+where
+    C: Eq + Hash + Clone + Ord,
+    L: Label<C>,
+{
+    let sol_len1 = left.transitions_len(left_state);
+    let sol_len2 = right.transitions_len(right_state);
+    let approx = approx_solutions(left.transitions(left_state), right.transitions(right_state));
+
+    let direct = ConflictEffect {
+        solutions: Ratio::new(approx, sol_len1),
+        all: sol_len2,
+    };
+    let backward = ConflictEffect {
+        solutions: Ratio::new(approx, sol_len2),
+        all: sol_len1,
+    };
+    (direct, backward)
+}
+
 fn approx_solutions<'a, C, L>(
     m1: impl Iterator<Item = MergedTransition<'a, C, L>>,
     m2: impl Iterator<Item = MergedTransition<'a, C, L>> + Clone,
@@ -263,7 +264,7 @@ where
     L: Label<C>,
     for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
-    rec_solutions(
+    inline_recursive_solutions(
         spec,
         states,
         visitor.unwrap_or(&mut DummyVisitor),
@@ -272,7 +273,7 @@ where
     .unwrap_or(0)
 }
 
-fn rec_solutions<'a, 'b, C, L>(
+fn inline_recursive_solutions<'a, 'b, C, L>(
     spec: &'a [STS<C, L>],
     states: &'b [StateRef],
     visitor: &mut dyn Visitor<C>,
@@ -291,10 +292,11 @@ where
             visitor.test();
             if !t.label.has_conflict(&applied) {
                 visitor.down();
-                rec_solutions(spec, states, visitor, &applied | t.label).unwrap_or_else(|| {
-                    visitor.solution();
-                    1
-                })
+                inline_recursive_solutions(spec, states, visitor, &applied | t.label)
+                    .unwrap_or_else(|| {
+                        visitor.solution();
+                        1
+                    })
             } else {
                 0
             }
@@ -317,7 +319,7 @@ impl<R: fmt::Debug> fmt::Display for Complexity<R> {
     }
 }
 
-pub fn complexity_by_graph<R>(g: &Graph<ConflictSource, ConflictEffect<R>>) -> Complexity<R>
+pub fn complexity_from_graph<R>(g: &Graph<ConflictSource, ConflictEffect<R>>) -> Complexity<R>
 where
     R: num::Num + Copy + Clone + From<usize> + Ord,
 {
@@ -372,14 +374,4 @@ where
     spec.iter()
         .map(|sts| sts.states())
         .multi_cartesian_product()
-}
-
-pub fn combination_identifier(hashes: &[u64], comb: &[StateRef]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    hashes
-        .iter()
-        .zip(comb.iter())
-        .collect::<BTreeMap<_, _>>()
-        .hash(&mut hasher);
-    hasher.finish()
 }
