@@ -12,19 +12,19 @@ use structopt::StructOpt;
 use ccsl::lccsl::automata::{
     ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StaticBitmapLabel, STS,
 };
-use ccsl::lccsl::constraints::{Constraint, Delay, Precedence, Specification};
+use ccsl::lccsl::constraints::{Constraint, Specification};
 use ccsl::lccsl::gen::{
     circle_spec, random_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
-use ccsl::lccsl::opti::optimize_spec;
+use ccsl::lccsl::opti::{optimize_by_tree_depth, optimize_by_tree_width, optimize_spec_by_sort};
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use rand::{RngCore, SeedableRng};
 use std::fs::File;
 use std::sync::Arc;
 use tool::{
-    all_constraints, analyze_specification, hash_spec, vec_into_vec, write_graph_no_label,
-    SpecCombParams, SquishedParams,
+    analyze_specification, gen_spec, gen_spec_flat, hash_spec, inverse_graph, vec_into_vec,
+    write_graph_no_label, SpecCombParams, SquishedParams,
 };
 
 #[derive(StructOpt, Debug)]
@@ -87,70 +87,57 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let data_dir = Path::new("/home/paulra/Code/ccsl-rs/plotter/data/");
-    let gen_range = 3..=7;
     analyse_specs(
         data_dir.join("circle"),
-        (3..=8)
-            .map(|size| circle_spec(size).unwrap())
-            .enumerate()
-            .map(|(i, t)| (i as u64, t)),
+        gen_spec(3..=6, |size| circle_spec(size).unwrap()),
     )?;
     analyse_specs(
         data_dir.join("star/precedence"),
-        (3..8)
-            .map(|size| {
-                to_precedence_spec(&star(size, 3).unwrap())
-                    .into_iter()
-                    .map(Into::into)
-                    .collect_vec()
-            })
-            .enumerate()
-            .map(|(i, t)| (i as u64, t)),
+        gen_spec(3..=6, |size| to_precedence_spec(&star(size, 3).unwrap())),
     )?;
     analyse_specs(
         data_dir.join("star/subclocking"),
-        (3..10)
-            .map(|size| {
-                to_subclocking_spec(&star(size, 3).unwrap())
-                    .into_iter()
-                    .map(Into::into)
-                    .collect_vec()
-            })
-            .enumerate()
-            .map(|(i, t)| (i as u64, t)),
+        gen_spec(3..=6, |size| to_subclocking_spec(&star(size, 3).unwrap())),
     )?;
     analyse_specs(
         data_dir.join("tree/precedence"),
-        gen_range
-            .clone()
-            .flat_map(|size| {
-                TreeIterator::new(size + 1).map(|tr| {
-                    to_precedence_spec(&tr)
-                        .into_iter()
-                        .map(Into::into)
-                        .collect_vec()
-                })
-            })
-            .enumerate()
-            .map(|(i, t)| (i as u64, t)),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&tr))
+        }),
     )?;
     analyse_specs(
         data_dir.join("tree/subclocking"),
-        gen_range.clone().flat_map(|size| {
-            TreeIterator::new(size + 1)
-                .map(|tr| {
-                    to_subclocking_spec(&tr)
-                        .into_iter()
-                        .map(Into::into)
-                        .collect_vec()
-                })
-                .enumerate()
-                .map(|(i, t)| (i as u64, t))
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&tr))
+        }),
+    )?;
+    analyse_specs(
+        data_dir.join("star/inverse/precedence"),
+        gen_spec(3..=6, |size| {
+            to_precedence_spec(&inverse_graph(star(size, 3).unwrap()))
+        }),
+    )?;
+    analyse_specs(
+        data_dir.join("star/inverse/subclocking"),
+        gen_spec(3..=6, |size| {
+            to_subclocking_spec(&inverse_graph(star(size, 3).unwrap()))
+        }),
+    )?;
+    analyse_specs(
+        data_dir.join("tree/inverse/precedence"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&inverse_graph(tr)))
+        }),
+    )?;
+    analyse_specs(
+        data_dir.join("tree/inverse/subclocking"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&inverse_graph(tr)))
         }),
     )?;
     let mut rng = rand::rngs::StdRng::from_entropy();
     let mut specs = Vec::new();
-    for size in 3..=8 {
+    for size in 3..=6 {
         for _ in 0..(100 - 10 * size) {
             let seed = rng.next_u64();
             specs.push((seed, random_specification(seed, size)));
@@ -162,9 +149,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     TreeIterator::new(4)
     //         .map(|tr| {
     //             to_precedence_spec(&tr)
-    //                 .into_iter()
-    //                 .map(Into::<Constraint<usize>>::into)
-    //                 .collect_vec()
     //         })
     //         .collect_vec()[1]
     // );
@@ -215,9 +199,20 @@ fn analyse_specs(
         let permutations_amount: usize = (1..=len).product();
         println!("step: {} ({})", len, permutations_amount);
         {
-            let opti_spec = optimize_spec::<u32, L>(&spec);
-            let opti_spec: Vec<STS<u32, L>> = vec_into_vec(opti_spec);
-            let (analysis, _) = analyze_specification(&opti_spec, spec_id, 0)?;
+            let opti_spec_perm = optimize_by_tree_width::<u32, L>(&spec);
+            let opti_spec = opti_spec_perm.apply_slice(spec.as_slice());
+            let perm_id = lehmer::Lehmer::from_permutation(
+                &opti_spec_perm.apply_slice(
+                    (0..spec.len())
+                        .into_iter()
+                        .map(|i| i as u8)
+                        .collect_vec()
+                        .as_slice(),
+                ),
+            )
+            .to_decimal() as u64;
+            let opti_spec: Vec<STS<u32, L>> = vec_into_vec(&opti_spec);
+            let (analysis, _) = analyze_specification(&opti_spec, spec_id, perm_id)?;
             optimized_buffer.extend(analysis);
             if optimized_buffer.len() >= 6144 {
                 optimized_parquet_wrt.write(&SpecCombParams::batch(
@@ -227,7 +222,7 @@ fn analyse_specs(
                 optimized_buffer.clear();
             }
         }
-        let spec: Vec<STS<u32, L>> = vec_into_vec(spec);
+        let spec: Vec<STS<u32, L>> = vec_into_vec(&spec);
         let mut perm = Vec::with_capacity(len);
         for perm_vec in (0..spec.len() as u8).permutations(len) {
             perm.clear();

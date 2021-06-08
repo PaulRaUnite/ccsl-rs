@@ -60,22 +60,28 @@ pub fn star(nodes: usize, width: usize) -> Option<DiGraph<usize, ()>> {
     }
 }
 
-pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Precedence<usize>> {
+pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
-    spec.extend(g.raw_edges().into_iter().map(|e| Precedence {
-        left: e.source().index(),
-        right: e.target().index(),
-        init: None,
-        max: None,
+    spec.extend(g.raw_edges().into_iter().map(|e| {
+        Precedence {
+            left: e.source().index(),
+            right: e.target().index(),
+            init: None,
+            max: None,
+        }
+        .into()
     }));
     spec
 }
 
-pub fn to_subclocking_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Subclocking<usize>> {
+pub fn to_subclocking_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
-    spec.extend(g.raw_edges().into_iter().map(|e| Subclocking {
-        left: e.source().index(),
-        right: e.target().index(),
+    spec.extend(g.raw_edges().into_iter().map(|e| {
+        Subclocking {
+            left: e.source().index(),
+            right: e.target().index(),
+        }
+        .into()
     }));
     spec
 }

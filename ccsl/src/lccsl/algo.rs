@@ -9,6 +9,7 @@ use petgraph::{Direction, Graph};
 
 use crate::lccsl::automata::{Label, MergedTransition, StateRef, STS};
 use num::rational::Ratio;
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::ops::BitOr;
 
@@ -16,6 +17,17 @@ use std::ops::BitOr;
 pub struct ConflictEffect<R> {
     pub solutions: R,
     pub all: usize,
+}
+
+impl<R: PartialEq> PartialEq for ConflictEffect<R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.solutions.eq(&other.solutions)
+    }
+}
+impl<R: PartialOrd> PartialOrd for ConflictEffect<R> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.solutions.partial_cmp(&other.solutions)
+    }
 }
 
 impl<R: fmt::Display> fmt::Display for ConflictEffect<R> {

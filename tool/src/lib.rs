@@ -20,12 +20,12 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
-use arrow::array::{ArrayRef, Int64Array, StructArray, UInt64Array, UInt8Array};
+use arrow::array::{ArrayRef, StructArray, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use ccsl::lccsl::algo::{
-    approx_conflict_map, combination_identifier, complexity_by_graph, find_solutions,
-    generate_combinations, limit_conflict_map, CountingVisitor,
+    approx_conflict_map, complexity_by_graph, find_solutions, generate_combinations,
+    limit_conflict_map, CountingVisitor,
 };
 use ccsl::lccsl::automata::{Label, STSBuilder, StateRef, STS};
 use ccsl::lccsl::constraints::{
@@ -34,9 +34,10 @@ use ccsl::lccsl::constraints::{
 };
 use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;
+use permutation::Permutation;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
-use petgraph::Graph;
+use petgraph::{Directed, Graph};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -65,6 +66,18 @@ pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug>(
     let dot = Dot::with_config(g, &[NodeNoLabel, EdgeNoLabel]);
     writeln!(&mut file, "{:?}", &dot)?;
     Ok(())
+}
+
+pub fn write_graph_indexed<N: Display, E: Display>(
+    g: &Graph<N, E>,
+    dir: &Path,
+    file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let g = g.map(
+        |n, w| format!("#:{} {}", n.index(), w),
+        |_, w| w.to_string(),
+    );
+    write_graph(&g, dir, file)
 }
 
 pub fn vec_into_vec<I: Into<O>, O>(vec: impl IntoIterator<Item = I>) -> Vec<O> {
@@ -400,7 +413,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     let mut map: Vec<(&str, STS<&str>)> = Vec::with_capacity(100);
     map.push((
         "coincidence",
-        Into::<STSBuilder<_>>::into(Coincidence {
+        Into::<STSBuilder<_>>::into(&Coincidence {
             left: "a",
             right: "b",
         })
@@ -408,7 +421,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "alternates",
-        Into::<STSBuilder<_>>::into(Alternates {
+        Into::<STSBuilder<_>>::into(&Alternates {
             left: "a",
             right: "b",
         })
@@ -416,7 +429,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "causality",
-        Into::<STSBuilder<_>>::into(Causality {
+        Into::<STSBuilder<_>>::into(&Causality {
             left: "a",
             right: "b",
             init: None,
@@ -426,7 +439,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "precedence",
-        Into::<STSBuilder<_>>::into(Precedence {
+        Into::<STSBuilder<_>>::into(&Precedence {
             left: "a",
             right: "b",
             init: None,
@@ -436,14 +449,14 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "exclusion",
-        Into::<STSBuilder<_>>::into(Exclusion {
+        Into::<STSBuilder<_>>::into(&Exclusion {
             clocks: collection!("a", "b"),
         })
         .into(),
     ));
     map.push((
         "subclocking",
-        Into::<STSBuilder<_>>::into(Subclocking {
+        Into::<STSBuilder<_>>::into(&Subclocking {
             left: "a",
             right: "b",
         })
@@ -451,7 +464,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "intersection",
-        Into::<STSBuilder<_>>::into(Intersection {
+        Into::<STSBuilder<_>>::into(&Intersection {
             out: "i",
             args: collection!("a", "b"),
         })
@@ -459,7 +472,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "union",
-        Into::<STSBuilder<_>>::into(Union {
+        Into::<STSBuilder<_>>::into(&Union {
             out: "u",
             args: collection!("a", "b"),
         })
@@ -467,7 +480,7 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
     ));
     map.push((
         "delay",
-        Into::<STSBuilder<_>>::into(Delay {
+        Into::<STSBuilder<_>>::into(&Delay {
             out: "d",
             base: "a",
             delay: 2,
@@ -504,17 +517,77 @@ mod test {
     }
 }
 
-pub fn decode_spec(
-    gen: impl IntoIterator<Item = (u64, Vec<Constraint<usize>>)>,
+pub fn decode_spec<C>(
+    gen: impl IntoIterator<Item = (u64, Vec<Constraint<C>>)>,
     spec_id: u64,
-) -> Option<Vec<Constraint<usize>>> {
-    None
+) -> Option<Vec<Constraint<C>>> {
+    gen.into_iter()
+        .find(|(id, _)| id == &spec_id)
+        .map(|(_, s)| s)
 }
 
-pub fn decode_perm(spec: &Vec<Constraint<usize>>, perm_id: u64) -> Option<Vec<Constraint<usize>>> {
-    None
+pub fn decode_perm<C>(spec: &Vec<Constraint<C>>, perm_id: u64) -> Option<Vec<Constraint<C>>>
+where
+    C: Clone,
+{
+    if spec.len() > (u8::MAX as usize) {
+        None
+    } else {
+        Some(
+            Permutation::from_vec(
+                lehmer::Lehmer::from_decimal(perm_id as usize, spec.len())
+                    .to_permutation()
+                    .into_iter()
+                    .map(|x| x as usize)
+                    .collect_vec(),
+            )
+            .apply_slice(spec.as_slice()),
+        )
+    }
 }
 
-pub fn decode_comb(spec: &Vec<Constraint<usize>>, comb_id: u64) -> Option<Vec<StateRef>> {
-    None
+pub fn decode_comb<C, L: Label<C>>(spec: &Vec<Constraint<C>>, comb_id: u64) -> Option<Vec<StateRef>>
+where
+    C: Clone + Ord + Hash + Display,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let spec: Vec<STS<C, L>> = vec_into_vec(spec);
+    let result = generate_combinations(&spec).nth(comb_id as usize);
+    result
+}
+
+pub fn gen_spec<C>(
+    r: impl IntoIterator<Item = usize>,
+    gen: impl FnMut(usize) -> Vec<Constraint<C>>,
+) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)> {
+    r.into_iter()
+        .map(gen)
+        .enumerate()
+        .map(|(i, s)| (i as u64, s))
+}
+
+pub fn gen_spec_flat<C, I>(
+    r: impl IntoIterator<Item = usize>,
+    gen: impl FnMut(usize) -> I,
+) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)>
+where
+    I: Iterator<Item = Vec<Constraint<C>>>,
+{
+    r.into_iter()
+        .flat_map(gen)
+        .enumerate()
+        .map(|(i, s)| (i as u64, s))
+}
+
+pub fn inverse_graph<N, E>(g: Graph<N, E, Directed>) -> Graph<N, E, Directed> {
+    let mut new = Graph::with_capacity(g.node_count(), g.edge_count());
+
+    let (nodes, edges) = g.into_nodes_edges();
+    for n in nodes {
+        new.add_node(n.weight);
+    }
+    for e in edges {
+        new.add_edge(e.target(), e.source(), e.weight);
+    }
+    new
 }

@@ -318,11 +318,11 @@ pub enum Constraint<C> {
     Delay(Delay<C>),
 }
 
-impl<C> From<Constraint<C>> for STSBuilder<C>
+impl<C> From<&'_ Constraint<C>> for STSBuilder<C>
 where
     C: Hash + Clone + Ord + fmt::Display,
 {
-    fn from(c: Constraint<C>) -> Self {
+    fn from(c: &Constraint<C>) -> Self {
         match c {
             Constraint::Causality(c) => c.into(),
             Constraint::Precedence(c) => c.into(),
@@ -357,11 +357,11 @@ where
 //     }
 // }
 
-impl<C> From<Coincidence<C>> for STSBuilder<C>
+impl<C> From<&'_ Coincidence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Coincidence<C>) -> Self {
+    fn from(c: &Coincidence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let state = State::new(0).with_invariant(var.eq(0));
         let mut system = STSBuilder::new(&c, state.clone());
@@ -372,11 +372,11 @@ where
     }
 }
 
-impl<C> From<Alternates<C>> for STSBuilder<C>
+impl<C> From<&'_ Alternates<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Alternates<C>) -> Self {
+    fn from(c: &Alternates<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let alt = State::new(1).with_invariant(var.eq(1));
@@ -391,32 +391,32 @@ where
     }
 }
 
-impl<C> From<Causality<C>> for STSBuilder<C>
+impl<C> From<&'_ Causality<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Causality<C>) -> Self {
+    fn from(c: &Causality<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
-        let mut system: STSBuilder<C> = Precedence {
+        let mut system: STSBuilder<C> = (&Precedence {
             left: c.left.clone(),
             right: c.right.clone(),
             init: None,
             max: None,
-        }
-        .into();
+        })
+            .into();
         let start = system.initial().clone();
         tr!(system, &start => &start, {c.left, c.right,});
         system
     }
 }
 
-impl<C> From<Precedence<C>> for STSBuilder<C>
+impl<C> From<&'_ Precedence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Precedence<C>) -> Self {
+    fn from(c: &Precedence<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
             todo!();
         }
@@ -439,27 +439,27 @@ where
     }
 }
 
-impl<C> From<Exclusion<C>> for STSBuilder<C>
+impl<C> From<&'_ Exclusion<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Exclusion<C>) -> Self {
+    fn from(c: &Exclusion<C>) -> Self {
         let start = State::new(0);
-        let mut system = STSBuilder::new(&c, start.clone());
+        let mut system: STSBuilder<C> = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &start, {});
-        for clock in c.clocks {
-            tr!(system, &start => &start, {clock,});
+        for clock in &c.clocks {
+            tr!(system, &start => &start, {clock.clone(),});
         }
         system
     }
 }
 
-impl<C> From<Subclocking<C>> for STSBuilder<C>
+impl<C> From<&'_ Subclocking<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Subclocking<C>) -> Self {
+    fn from(c: &Subclocking<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
         let mut system = STSBuilder::new(&c, start.clone());
@@ -471,11 +471,11 @@ where
     }
 }
 
-impl<C> From<Union<C>> for STSBuilder<C>
+impl<C> From<&'_ Union<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Union<C>) -> Self {
+    fn from(c: &Union<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
         for clock in c.args.iter() {
             let var = IntegerExpression::var(Delta(c.out.clone(), clock.clone()));
@@ -501,11 +501,11 @@ where
     }
 }
 
-impl<C> From<Intersection<C>> for STSBuilder<C>
+impl<C> From<&'_ Intersection<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Intersection<C>) -> Self {
+    fn from(c: &Intersection<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
         for clock in c.args.iter() {
             let var = IntegerExpression::var(Delta(c.out.clone(), clock.clone()));
@@ -518,20 +518,20 @@ where
             &start,
             &start,
             c.args
-                .into_iter()
-                .chain(once(c.out))
-                .map(|c| (c, true))
+                .iter()
+                .chain(once(&c.out))
+                .map(|c| (c.clone(), true))
                 .collect_vec(),
         );
         tr!(system, &start => &start, {});
         system
     }
 }
-impl<C> From<Delay<C>> for STSBuilder<C>
+impl<C> From<&'_ Delay<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
 {
-    fn from(c: Delay<C>) -> Self {
+    fn from(c: &Delay<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let mut system = STSBuilder::new(&c, start.clone());
@@ -549,39 +549,39 @@ where
     }
 }
 
-impl<C> From<Infinity<C>> for STSBuilder<C> {
-    fn from(_: Infinity<C>) -> Self {
+impl<C> From<&'_ Infinity<C>> for STSBuilder<C> {
+    fn from(_: &Infinity<C>) -> Self {
         todo!()
     }
 }
 
-impl<C> From<Supremum<C>> for STSBuilder<C> {
-    fn from(_: Supremum<C>) -> Self {
+impl<C> From<&'_ Supremum<C>> for STSBuilder<C> {
+    fn from(_: &Supremum<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Minus<C>> for STSBuilder<C> {
-    fn from(_: Minus<C>) -> Self {
+impl<C> From<&'_ Minus<C>> for STSBuilder<C> {
+    fn from(_: &Minus<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Diff<C>> for STSBuilder<C> {
-    fn from(_: Diff<C>) -> Self {
+impl<C> From<&'_ Diff<C>> for STSBuilder<C> {
+    fn from(_: &Diff<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<SampleOn<C>> for STSBuilder<C> {
-    fn from(_: SampleOn<C>) -> Self {
+impl<C> From<&'_ SampleOn<C>> for STSBuilder<C> {
+    fn from(_: &SampleOn<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Filter<C>> for STSBuilder<C> {
-    fn from(_: Filter<C>) -> Self {
+impl<C> From<&'_ Filter<C>> for STSBuilder<C> {
+    fn from(_: &Filter<C>) -> Self {
         todo!()
     }
 }
-impl<C> From<Repeat<C>> for STSBuilder<C> {
-    fn from(_: Repeat<C>) -> Self {
+impl<C> From<&'_ Repeat<C>> for STSBuilder<C> {
+    fn from(_: &Repeat<C>) -> Self {
         todo!()
     }
 }
@@ -592,11 +592,11 @@ mod tests {
 
     #[test]
     fn into_automaton() {
-        let a: STSBuilder<&str> = Coincidence {
+        let a: STSBuilder<&str> = (&Coincidence {
             left: "a",
             right: "b",
-        }
-        .into();
+        })
+            .into();
         println!("{:?}", a);
         assert_eq!(1, 2)
     }
@@ -662,13 +662,13 @@ impl<C: fmt::Display> fmt::Display for Delay<C> {
     }
 }
 
-impl<C, L> From<Constraint<C>> for STS<C, L>
+impl<C, L> From<&'_ Constraint<C>> for STS<C, L>
 where
     C: Clone + Ord + Hash + fmt::Display,
     L: Label<C>,
     for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
-    fn from(v: Constraint<C>) -> Self {
+    fn from(v: &Constraint<C>) -> Self {
         let builder: STSBuilder<C> = v.into();
         builder.into()
     }
