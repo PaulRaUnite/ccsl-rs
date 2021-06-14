@@ -25,7 +25,7 @@ use num::ToPrimitive;
 use permutation::Permutation;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
-use petgraph::{Directed, Graph};
+use petgraph::{Directed, EdgeType, Graph};
 use rayon::iter::ParallelBridge;
 use rayon::prelude::{ParallelExtend, ParallelIterator};
 use serde::Serialize;
@@ -34,15 +34,15 @@ use ccsl::lccsl::algo::{
     approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
     limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::{Label, STSBuilder, StateRef, STS};
+use ccsl::lccsl::automata::{ClockLabelClassic, Label, STSBuilder, StateRef, STS};
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
     Subclocking, Union,
 };
 use ccsl::lccsl::vizualization::unfold_specification;
 
-pub fn write_graph<N: Display, E: Display>(
-    g: &Graph<N, E>,
+pub fn write_graph<N: Display, E: Display, D: EdgeType>(
+    g: &Graph<N, E, D>,
     dir: &Path,
     file: &str,
 ) -> Result<(), Box<dyn Error>> {
@@ -53,8 +53,8 @@ pub fn write_graph<N: Display, E: Display>(
     Ok(())
 }
 
-pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug>(
-    g: &Graph<N, E>,
+pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug, D: EdgeType>(
+    g: &Graph<N, E, D>,
     dir: &Path,
     file: &str,
 ) -> Result<(), Box<dyn Error>> {
@@ -65,8 +65,20 @@ pub fn write_graph_no_label<N: fmt::Debug, E: fmt::Debug>(
     Ok(())
 }
 
-pub fn write_graph_indexed<N: Display, E: Display>(
-    g: &Graph<N, E>,
+pub fn write_graph_indexed_debug<N: fmt::Debug, E: fmt::Debug, D: EdgeType>(
+    g: &Graph<N, E, D>,
+    dir: &Path,
+    file: &str,
+) -> Result<(), Box<dyn Error>> {
+    let g = g.map(
+        |n, w| format!("#:{} {:?}", n.index(), w),
+        |_, w| format!("{:?}", w),
+    );
+    write_graph(&g, dir, file)
+}
+
+pub fn write_graph_indexed<N: Display, E: Display, D: EdgeType>(
+    g: &Graph<N, E, D>,
     dir: &Path,
     file: &str,
 ) -> Result<(), Box<dyn Error>> {
@@ -299,12 +311,85 @@ impl Criteria {
         ]
     }
 }
-
-pub fn analyze_specification<C, L>(
-    spec: &Vec<STS<C, L>>,
+pub fn analyze_specification_combination<C, L>(
+    spec: &[STS<C, L>],
+    comb: &[StateRef],
     spec_id: u64,
     perm_id: u64,
-) -> Result<(Vec<SpecCombParams>, SquishedParams), Box<dyn Error>>
+    comb_id: u64,
+) -> SpecCombParams
+where
+    C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Sync + Send,
+    L: Label<C> + Clone + Hash + Eq + Sync,
+    for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
+{
+    let mut visitor = CountingVisitor::new();
+    let actual = find_solutions(spec, &comb, Some(&mut visitor));
+    let dep_map = limit_conflict_map(spec, &comb);
+    let limit = complexity_from_graph(&dep_map);
+    let dep_map = approx_conflict_map(spec, &comb);
+    let approx = complexity_from_graph(&dep_map);
+    SpecCombParams {
+        spec: spec_id,
+        variant: perm_id,
+        comb: comb_id,
+        size: spec.len() as u8,
+        real: Criteria {
+            test: visitor.test,
+            down: visitor.down,
+            solutions: actual,
+        },
+        limit: Criteria {
+            test: limit.tests,
+            down: limit.downs,
+            solutions: limit.solutions,
+        },
+        approx: Criteria {
+            test: approx.tests.to_usize().unwrap_or_default(),
+            down: approx.downs.to_usize().unwrap_or_default(),
+            solutions: approx.solutions.to_usize().unwrap_or_default(),
+        },
+    }
+}
+
+pub fn analyze_squish_specification<C, L>(
+    spec: &[STS<C, L>],
+    spec_id: u64,
+    perm_id: u64,
+) -> SquishedParams
+where
+    C: Clone + Hash + Ord,
+    L: Label<C> + Clone + Hash + Eq,
+{
+    let spec: Vec<STS<C, L>> = spec.iter().map(|c| c.clone().squish()).collect();
+    let comb: Vec<StateRef> = spec.iter().map(|c| c.initial()).collect_vec();
+
+    let dep_map = limit_conflict_map(&spec, &comb);
+    let limit = complexity_from_graph(&dep_map);
+    let dep_map = approx_conflict_map(&spec, &comb);
+    let approx = complexity_from_graph(&dep_map);
+
+    SquishedParams {
+        spec: spec_id,
+        variant: perm_id,
+        size: spec.len() as u8,
+        limit: Criteria {
+            test: limit.tests,
+            down: limit.downs,
+            solutions: limit.solutions,
+        },
+        approx: Criteria {
+            test: approx.tests.to_usize().unwrap(),
+            down: approx.downs.to_usize().unwrap(),
+            solutions: approx.solutions.to_usize().unwrap(),
+        },
+    }
+}
+pub fn analyze_specification<C, L>(
+    spec: &[STS<C, L>],
+    spec_id: u64,
+    perm_id: u64,
+) -> (Vec<SpecCombParams>, SquishedParams)
 where
     C: Hash + Clone + Ord + fmt::Display + fmt::Debug + Sync + Send,
     L: Label<C> + Clone + Hash + Eq + Sync,
@@ -316,65 +401,14 @@ where
             .enumerate()
             .par_bridge()
             .map(|(i, comb)| {
-                //let comb_id = combination_identifier(&hashes, &comb);
-                let comb_id = i as u64;
-                let mut visitor = CountingVisitor::new();
-                let actual = find_solutions(spec, &comb, Some(&mut visitor));
-                let dep_map = limit_conflict_map(spec, &comb);
-                let limit = complexity_from_graph(&dep_map);
-                let dep_map = approx_conflict_map(spec, &comb);
-                let approx = complexity_from_graph(&dep_map);
-                SpecCombParams {
-                    spec: spec_id,
-                    variant: perm_id,
-                    comb: comb_id,
-                    size: spec.len() as u8,
-                    real: Criteria {
-                        test: visitor.test,
-                        down: visitor.down,
-                        solutions: actual,
-                    },
-                    limit: Criteria {
-                        test: limit.tests,
-                        down: limit.downs,
-                        solutions: limit.solutions,
-                    },
-                    approx: Criteria {
-                        test: approx.tests.to_usize().unwrap_or_default(),
-                        down: approx.downs.to_usize().unwrap_or_default(),
-                        solutions: approx.solutions.to_usize().unwrap_or_default(),
-                    },
-                }
+                analyze_specification_combination(spec, &comb, spec_id, perm_id, i as u64)
             }),
     );
-    let spec: Vec<STS<C, L>> = spec.iter().map(|c| c.clone().squish()).collect();
-    let comb: Vec<StateRef> = spec.iter().map(|c| c.initial()).collect_vec();
 
-    let dep_map = limit_conflict_map(&spec, &comb);
-    let limit = complexity_from_graph(&dep_map);
-    let dep_map = approx_conflict_map(&spec, &comb);
-    let approx = complexity_from_graph(&dep_map);
-
-    let squished = SquishedParams {
-        spec: spec_id,
-        variant: perm_id,
-        size: spec.len() as u8,
-        limit: Criteria {
-            test: limit.tests,
-            down: limit.downs,
-            solutions: limit.solutions,
-        },
-        approx: Criteria {
-            test: approx.tests.to_usize().ok_or("cannot convert to usize")?,
-            down: approx.downs.to_usize().ok_or("cannot convert to usize")?,
-            solutions: approx
-                .solutions
-                .to_usize()
-                .ok_or("cannot convert to usize")?,
-        },
-    };
-
-    Ok((analytics, squished))
+    (
+        analytics,
+        analyze_squish_specification(spec, spec_id, perm_id),
+    )
 }
 
 macro_rules! collection {
@@ -389,7 +423,7 @@ macro_rules! collection {
 }
 
 pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
-    let mut map: Vec<(&str, STS<&str>)> = Vec::with_capacity(100);
+    let mut map: Vec<(&str, STS<&str, ClockLabelClassic<&str>>)> = Vec::with_capacity(100);
     map.push((
         "coincidence",
         Into::<STSBuilder<_>>::into(&Coincidence {

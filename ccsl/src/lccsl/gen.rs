@@ -1,4 +1,4 @@
-use std::iter::once;
+use std::iter::{once, FromIterator};
 
 use itertools::Itertools;
 use petgraph::prelude::*;
@@ -8,6 +8,8 @@ use crate::lccsl::constraints::{
     Causality, Constraint, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
     Subclocking, Supremum, Union,
 };
+use std::cmp::max;
+use std::collections::BTreeSet;
 
 pub fn circle_spec(size: usize) -> Option<Vec<Constraint<usize>>> {
     if size <= 1 {
@@ -402,4 +404,173 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
         spec.push(c);
     }
     spec
+}
+
+fn relation_clocks(rng: &mut StdRng, known: &BTreeSet<usize>, clock_size: usize) -> (usize, usize) {
+    let left = *known.iter().choose(rng).unwrap();
+    let right = rng.gen_range(0..clock_size - 1);
+    let right = if right < left { right } else { right + 1 };
+    if rng.gen_ratio(1, 2) {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
+fn expression_clocks(
+    rng: &mut StdRng,
+    known: &BTreeSet<usize>,
+    clock_size: usize,
+) -> (usize, BTreeSet<usize>) {
+    let size = rng.gen_range(2..clock_size);
+    let mut all = Vec::with_capacity(size);
+    let first = *known.iter().choose(rng).unwrap();
+    all.push(first);
+    let mut complement = BTreeSet::from_iter(0..clock_size);
+    complement.remove(&first);
+    all.extend(complement.iter().copied().choose_multiple(rng, size - 1));
+    all.shuffle(rng);
+    let (first, tail) = all.split_first().unwrap();
+    (*first, tail.iter().copied().collect())
+}
+
+pub fn random_connected_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
+    let mut spec = Vec::with_capacity(size);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let clock_size = 2 * size;
+    let mut known_clocks = BTreeSet::new();
+    known_clocks.insert(0);
+
+    for _ in 0..size {
+        let constr = rng.gen_range(0..6);
+        let c: Constraint<usize> = match constr {
+            0 => {
+                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(left);
+                known_clocks.insert(right);
+                Causality {
+                    left,
+                    right,
+                    init: None,
+                    max: None,
+                }
+                .into()
+            }
+
+            1 => {
+                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(left);
+                known_clocks.insert(right);
+                Precedence {
+                    left,
+                    right,
+                    init: None,
+                    max: None,
+                }
+                .into()
+            }
+            2 => {
+                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(left);
+                known_clocks.insert(right);
+                Subclocking { left, right }.into()
+            }
+            3 => {
+                let (out, mut others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                others.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Exclusion { clocks: others }.into()
+            }
+            4 => {
+                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Union { out, args: others }.into()
+            }
+            5 => {
+                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Intersection { out, args: others }.into()
+            }
+            6 => {
+                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Infinity { out, args: others }.into()
+            }
+            7 => {
+                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Supremum { out, args: others }.into()
+            }
+            8 => {
+                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(out);
+                known_clocks.extend(others.iter().copied());
+                Minus {
+                    out,
+                    base: rng.gen_range(0..clock_size),
+                    args: others,
+                }
+                .into()
+            }
+            9 => {
+                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(left);
+                known_clocks.insert(right);
+                Repeat {
+                    out: left,
+                    every: Some(rng.gen_range(0..clock_size)),
+                    base: right,
+                    from: Some(rng.gen_range(0..clock_size)),
+                    up_to: None,
+                }
+                .into()
+            }
+            10 => {
+                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                known_clocks.insert(left);
+                known_clocks.insert(right);
+                Delay {
+                    out: left,
+                    base: right,
+                    delay: rng.gen_range(0..clock_size),
+                    on: None,
+                }
+            }
+            .into(),
+            _ => {
+                panic!();
+            }
+        };
+        spec.push(c);
+    }
+    spec
+}
+
+pub fn random_connected_graph(seed: u64, vertices: usize) -> UnGraph<(), ()> {
+    let (mut rng, mut g) = random_tree(seed, vertices, vertices * 2);
+    let edge_count = rng.gen_range(0..vertices ^ 2);
+    while g.edge_count() < edge_count {
+        g.add_edge(
+            NodeIndex::new(rng.gen_range(0..vertices)),
+            NodeIndex::new(rng.gen_range(0..vertices)),
+            (),
+        );
+    }
+    g
+}
+
+pub fn random_tree(seed: u64, vertices: usize, edge_hint: usize) -> (StdRng, UnGraph<(), ()>) {
+    assert!(vertices > 0);
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut g = UnGraph::with_capacity(vertices, max(edge_hint, vertices - 1));
+    for i in 1..vertices {
+        let n = g.add_node(());
+        g.add_edge(NodeIndex::new(rng.gen_range(0..i)), n, ());
+    }
+    (rng, g)
 }

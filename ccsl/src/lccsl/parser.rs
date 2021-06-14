@@ -32,9 +32,9 @@ pub enum ParseError {
 pub enum AST {}
 
 pub fn parse(input: &str) -> Result<Specification<String>, ParseError> {
-    let rules = parse_raw(input)?;
-    let mut clocks = Default::default();
-    let mut constraints = vec![];
+    let _rules = parse_raw(input)?;
+    let clocks = Default::default();
+    let constraints = vec![];
     Ok(Specification {
         clocks,
         constraints,

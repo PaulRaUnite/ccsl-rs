@@ -19,7 +19,7 @@ where
     let mut g = Graph::new();
     let root = g.add_node(format!("0:{}", spec[0]));
 
-    let mut previous_nodes: Vec<(Vec<L>, NodeIndex, bool)> = vec![(vec![], root, false)];
+    let mut previous_nodes: Vec<(Vec<&L>, NodeIndex, bool)> = vec![(vec![], root, false)];
 
     for (i, (c, s)) in spec.iter().zip(comb.iter()).enumerate() {
         previous_nodes = previous_nodes
@@ -53,11 +53,7 @@ where
                     None
                 } else {
                     Some((
-                        before
-                            .iter()
-                            .map(|v| v.clone())
-                            .chain(once(t.label.clone()))
-                            .collect(),
+                        before.iter().map(|v| *v).chain(once(t.label)).collect(),
                         next,
                         conflicted,
                     ))

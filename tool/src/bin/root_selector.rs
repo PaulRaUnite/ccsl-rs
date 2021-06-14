@@ -1,0 +1,86 @@
+use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
+use ccsl::lccsl::gen::random_connected_specification;
+use ccsl::lccsl::opti::{optimize_by_tree_depth, optimize_component_by_tree_depth_by_root};
+use itertools::Itertools;
+use std::error::Error;
+use structopt::StructOpt;
+use tool::{analyze_specification, vec_into_vec};
+
+#[derive(StructOpt, Debug)]
+#[structopt(name = "basic", about = "Resolver for specification identifiers")]
+struct Opt {
+    #[structopt(short, long)]
+    spec: u64,
+    #[structopt(short, long)]
+    size: usize,
+}
+
+type L = StaticBitmapLabel;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let opt: Opt = Opt::from_args();
+    let spec = random_connected_specification(opt.spec, opt.size)
+        .into_iter()
+        .map(|c| c.map(&mut |clock| *clock as u32))
+        .collect_vec();
+
+    let result = (0..opt.size as u8)
+        .permutations(opt.size)
+        .map(|perm_vec| {
+            let perm_id = lehmer::Lehmer::from_permutation(&perm_vec).to_decimal();
+            let perm = perm_vec
+                .iter()
+                .map(|i| spec[*i as usize].clone())
+                .collect_vec();
+            (perm, perm_vec, perm_id as u64)
+        })
+        .map(|(spec, perm_vec, perm_id)| {
+            let opti_spec_perm =
+                optimize_component_by_tree_depth_by_root::<u32, L>(spec.as_slice(), 0);
+            let new_perm_id =
+                lehmer::Lehmer::from_permutation(&opti_spec_perm.apply_slice(perm_vec))
+                    .to_decimal();
+            let opti_spec = opti_spec_perm.apply_slice(spec.as_slice());
+            let opti_spec: Vec<STS<u32, L>> = vec_into_vec(&opti_spec);
+            let (analysis, _) = analyze_specification(&opti_spec, opt.spec, new_perm_id as u64);
+            (
+                perm_id,
+                analysis.into_iter().max_by_key(|p| p.real.test).unwrap(),
+            )
+        })
+        .min_by_key(|(_, p)| p.real.test);
+    let best = (0..opt.size as u8)
+        .permutations(opt.size)
+        .map(|perm_vec| {
+            let perm_id = lehmer::Lehmer::from_permutation(&perm_vec).to_decimal();
+            let perm = perm_vec
+                .into_iter()
+                .map(|i| spec[i as usize].clone())
+                .collect_vec();
+
+            let spec: Vec<STS<u32, L>> = vec_into_vec(&perm);
+            let (analysis, _) = analyze_specification(&spec, opt.spec, perm_id as u64);
+            (
+                perm_id,
+                analysis.into_iter().max_by_key(|p| p.real.test).unwrap(),
+            )
+        })
+        .min_by_key(|(_, p)| p.real.test);
+    let opti = {
+        let opti_perm = optimize_by_tree_depth::<_, L>(&spec);
+        let opti = opti_perm.apply_slice(spec.as_slice());
+        let perm_id = lehmer::Lehmer::from_permutation(
+            &opti_perm.apply_slice((0..opti_perm.len() as u8).collect_vec()),
+        )
+        .to_decimal();
+        let opti: Vec<STS<u32, L>> = vec_into_vec(&opti);
+        let (analysis, _) = analyze_specification(&opti, opt.spec, perm_id as u64);
+        println!("optimal:\n{}", opti.iter().join(";\n"));
+        analysis.into_iter().max_by_key(|p| p.real.test).unwrap()
+    };
+    println!("{:?} vs \n{:?} vs \n{:?}", result, best, opti);
+    let spec: Vec<STS<u32, L>> = vec_into_vec(&spec);
+    println!("spec\n{}", spec.iter().join(";\n"));
+
+    Ok(())
+}

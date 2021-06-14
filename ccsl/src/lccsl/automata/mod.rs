@@ -396,7 +396,7 @@ mod macros {
 }
 
 #[derive(Debug, Clone)]
-pub struct STS<C, L = ClockLabelClassic<C>> {
+pub struct STS<C, L> {
     name: String,
     states: Vec<Option<Arc<Expr<C>>>>,
     states_to_trans: Vec<Range<usize>>,
@@ -549,7 +549,7 @@ where
 {
     fn has_conflict(&self, rhs: &Self) -> bool;
 
-    fn with_capacity_hint(size: usize) -> Self {
+    fn with_capacity_hint(_size: usize) -> Self {
         Self::default()
     }
 }
@@ -620,7 +620,7 @@ impl Debug for StaticBitmapLabel {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SB {:#066b} < {:#066b}",
+            "SB {:#010b} < {:#010b}",
             self.clocks.as_value(),
             self.selection.as_value()
         )
@@ -669,7 +669,7 @@ impl<'a, 'b> BitOr<&'b StaticBitmapLabel> for &'a StaticBitmapLabel {
     fn bitor(self, rhs: &'b StaticBitmapLabel) -> Self::Output {
         StaticBitmapLabel {
             clocks: self.clocks | rhs.clocks,
-            selection: self.selection | self.selection,
+            selection: self.selection | rhs.selection,
         }
     }
 }

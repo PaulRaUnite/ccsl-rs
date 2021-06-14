@@ -338,24 +338,24 @@ where
         }
     }
 }
-// TODO:
-// impl<C> Constraint<C> {
-//     pub fn rank(&self) -> usize {
-//         match self {
-//             Constraint::Causality(_) => {}
-//             Constraint::Precedence(_) => {}
-//             Constraint::SubClock(_) => {}
-//             Constraint::Exclusion(_) => {}
-//             Constraint::Infinity(_) => {}
-//             Constraint::Supremum(_) => {}
-//             Constraint::Union(_) => {}
-//             Constraint::Intersection(_) => {}
-//             Constraint::Minus(_) => {}
-//             Constraint::Repeat(_) => {}
-//             Constraint::Delay(_) => {}
-//         }
-//     }
-// }
+
+impl<C> Constraint<C> {
+    pub fn rank(&self) -> usize {
+        match self {
+            Constraint::Causality(_) => 2,
+            Constraint::Precedence(_) => 2,
+            Constraint::SubClock(_) => 1,
+            Constraint::Exclusion(_) => 0,
+            Constraint::Infinity(_) => 3,
+            Constraint::Supremum(_) => 3,
+            Constraint::Union(_) => 4,
+            Constraint::Intersection(_) => 1,
+            Constraint::Minus(_) => 1,
+            Constraint::Repeat(_) => 5,
+            Constraint::Delay(_) => 0,
+        }
+    }
+}
 
 impl<C> From<&'_ Coincidence<C>> for STSBuilder<C>
 where

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
@@ -58,6 +58,17 @@ where
     generic_conflict_map(spec, comb, approx_solutions_edger)
 }
 
+pub fn approx_conflict_map_undirect<C, L>(
+    spec: &[STS<C, L>],
+    comb: &[StateRef],
+) -> Graph<ConflictSource, ConflictEffect<usize>>
+where
+    C: Clone + Hash + Ord,
+    L: Label<C>,
+{
+    generic_conflict_map(spec, comb, approx_solutions_edger_undirect)
+}
+
 pub fn limit_conflict_map<C, L>(
     spec: &[STS<C, L>],
     comb: &[StateRef],
@@ -79,16 +90,6 @@ where
     L: Label<C>,
     F: Fn(&STS<C, L>, &STS<C, L>, StateRef, StateRef) -> (ConflictEffect<R>, ConflictEffect<R>),
 {
-    let mut index: HashMap<&C, Vec<(usize, &STS<C, L>)>> = HashMap::new();
-    for (i, constraint) in spec.iter().enumerate() {
-        for clock in constraint.clocks() {
-            index
-                .entry(clock)
-                .or_insert_with(|| vec![])
-                .push((i, constraint));
-        }
-    }
-
     let mut g = Graph::new();
     let nodes: Vec<_> = spec
         .iter()
@@ -100,14 +101,12 @@ where
             })
         })
         .collect();
-    for (_, constraints) in index.into_iter() {
-        for ((i1, c1), (i2, c2)) in constraints.into_iter().tuple_combinations::<(_, _)>() {
-            let n1 = nodes[i1];
-            let n2 = nodes[i2];
-            let (direct, backwards) = edger(c1, c2, comb[i1], comb[i2]);
-            g.add_edge(n1, n2, direct);
-            g.add_edge(n2, n1, backwards);
-        }
+    for ((i1, c1), (i2, c2)) in spec.iter().enumerate().tuple_combinations::<(_, _)>() {
+        let n1 = nodes[i1];
+        let n2 = nodes[i2];
+        let (direct, backwards) = edger(c1, c2, comb[i1], comb[i2]);
+        g.add_edge(n1, n2, direct);
+        g.add_edge(n2, n1, backwards);
     }
     g
 }
@@ -178,6 +177,27 @@ where
         all: sol_len1,
     };
     (direct, backward)
+}
+
+fn approx_solutions_edger_undirect<C, L>(
+    left: &STS<C, L>,
+    right: &STS<C, L>,
+    left_state: StateRef,
+    right_state: StateRef,
+) -> (ConflictEffect<usize>, ConflictEffect<usize>)
+where
+    C: Eq + Hash + Clone + Ord,
+    L: Label<C>,
+{
+    let sol_len1 = left.transitions_len(left_state);
+    let sol_len2 = right.transitions_len(right_state);
+    let approx = approx_solutions(left.transitions(left_state), right.transitions(right_state));
+
+    let edge = ConflictEffect {
+        solutions: approx,
+        all: sol_len1 * sol_len2,
+    };
+    (edge, edge)
 }
 
 fn approx_solutions<'a, C, L>(
@@ -268,7 +288,7 @@ where
         spec,
         states,
         visitor.unwrap_or(&mut DummyVisitor),
-        L::with_capacity_hint(spec.iter().map(|c| c.clocks().len()).sum()),
+        L::with_capacity_hint(spec.iter().flat_map(|c| c.clocks()).unique().count()),
     )
     .unwrap_or(0)
 }
