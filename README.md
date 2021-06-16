@@ -1,7 +1,7 @@
 # CCSL-RS
 
 ## Rust installation
-Go to https://www.rust-lang.org/tools/install and follow the instructions 
+Please go to https://www.rust-lang.org/tools/install and follow the instructions 
 for your platform.
 
 For Linux, it is just an oneliner, and one can test if everything installed correctly by 
@@ -34,7 +34,7 @@ cd ./target/release/
 ```
 
 > WARNING: The tool uses parallelization of generation by default, comment (`//`) line 
-> with `.par_bridge()` if not desired/causes problems.
+> with `.par_bridge()` in file `lccsl-gen.rs` if not desired/causes problems.
 
 ### Typical usage
 > `./lccsl-gen` can be replaced by `cargo run --release --bin lccsl-gen --`
