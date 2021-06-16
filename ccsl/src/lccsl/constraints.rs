@@ -728,10 +728,17 @@ impl<C> Constraint<C> {
             Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
             Constraint::Infinity(c) => format!("Let {} be inf({})", c.out, c.args.iter().join(",")),
             Constraint::Supremum(c) => format!("Let {} be sup({})", c.out, c.args.iter().join(",")),
-            Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join("+")),
-            Constraint::Intersection(c) => format!("Let {} be {}", c.out, c.args.iter().join("*")),
+            Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join(" + ")),
+            Constraint::Intersection(c) => {
+                format!("Let {} be {}", c.out, c.args.iter().join(" * "))
+            }
             Constraint::Minus(c) => {
-                format!("Let {} be {} - {}", c.out, c.base, c.args.iter().join("-"))
+                format!(
+                    "Let {} be {} - {}",
+                    c.out,
+                    c.base,
+                    c.args.iter().join(" - ")
+                )
             }
             Constraint::Repeat(c) => format!(
                 "repeat {} every {} {} {} {}",
