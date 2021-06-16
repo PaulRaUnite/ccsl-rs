@@ -559,13 +559,12 @@ where
     }
 }
 
-pub fn decode_comb<C, L: Label<C>>(spec: &Vec<Constraint<C>>, comb_id: u64) -> Option<Vec<StateRef>>
+pub fn decode_comb<C, L: Label<C>>(spec: &Vec<STS<C, L>>, comb_id: u64) -> Option<Vec<StateRef>>
 where
     C: Clone + Ord + Hash + Display,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let spec: Vec<STS<C, L>> = vec_into_vec(spec);
-    let result = generate_combinations(&spec).nth(comb_id as usize);
+    let result = generate_combinations(spec).nth(comb_id as usize);
     result
 }
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::convert::TryFrom;
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::iter::once;
 
@@ -339,24 +339,6 @@ where
     }
 }
 
-impl<C> Constraint<C> {
-    pub fn rank(&self) -> usize {
-        match self {
-            Constraint::Causality(_) => 2,
-            Constraint::Precedence(_) => 2,
-            Constraint::SubClock(_) => 1,
-            Constraint::Exclusion(_) => 0,
-            Constraint::Infinity(_) => 3,
-            Constraint::Supremum(_) => 3,
-            Constraint::Union(_) => 4,
-            Constraint::Intersection(_) => 1,
-            Constraint::Minus(_) => 1,
-            Constraint::Repeat(_) => 5,
-            Constraint::Delay(_) => 0,
-        }
-    }
-}
-
 impl<C> From<&'_ Coincidence<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + fmt::Display,
@@ -640,7 +622,7 @@ impl<C: fmt::Display> fmt::Display for Exclusion<C> {
 
 impl<C: fmt::Display> fmt::Display for Subclocking<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ⊃ {}", self.left, self.right)
+        write!(f, "{} ⊂ {}", self.left, self.right)
     }
 }
 
@@ -695,6 +677,71 @@ impl<C> Constraint<C> {
             Constraint::Minus(c) => c.map(f).into(),
             Constraint::Repeat(c) => c.map(f).into(),
             Constraint::Delay(c) => c.map(f).into(),
+        }
+    }
+
+    pub fn rank(&self) -> usize {
+        match self {
+            Constraint::Causality(_) => 2,
+            Constraint::Precedence(_) => 2,
+            Constraint::SubClock(_) => 1,
+            Constraint::Exclusion(_) => 0,
+            Constraint::Infinity(_) => 3,
+            Constraint::Supremum(_) => 3,
+            Constraint::Union(_) => 4,
+            Constraint::Intersection(_) => 1,
+            Constraint::Minus(_) => 1,
+            Constraint::Repeat(_) => 5,
+            Constraint::Delay(_) => 0,
+        }
+    }
+
+    pub fn clocks(&self) -> Vec<&C> {
+        match self {
+            Constraint::Causality(c) => vec![&c.left, &c.right],
+            Constraint::Precedence(c) => vec![&c.left, &c.right],
+            Constraint::SubClock(c) => vec![&c.left, &c.right],
+            Constraint::Exclusion(c) => c.clocks.iter().collect_vec(),
+            Constraint::Infinity(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Supremum(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Union(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Intersection(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Minus(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Repeat(c) => vec![&c.out, &c.base],
+            Constraint::Delay(c) => {
+                c.on.iter()
+                    .chain(once(&c.out))
+                    .chain(once(&c.base))
+                    .collect_vec()
+            }
+        }
+    }
+
+    pub fn to_lccsl(&self) -> String
+    where
+        C: Display,
+    {
+        match self {
+            Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right),
+            Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
+            Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
+            Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
+            Constraint::Infinity(c) => format!("Let {} be inf({})", c.out, c.args.iter().join(",")),
+            Constraint::Supremum(c) => format!("Let {} be sup({})", c.out, c.args.iter().join(",")),
+            Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join("+")),
+            Constraint::Intersection(c) => format!("Let {} be {}", c.out, c.args.iter().join("*")),
+            Constraint::Minus(c) => {
+                format!("Let {} be {} - {}", c.out, c.base, c.args.iter().join("-"))
+            }
+            Constraint::Repeat(c) => format!(
+                "repeat {} every {} {} {} {}",
+                c.out,
+                c.every.map_or("".to_owned(), |v| v.to_string()),
+                c.base,
+                c.from.map_or("".to_owned(), |v| format!("from {}", v)),
+                c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
+            ),
+            Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
         }
     }
 }

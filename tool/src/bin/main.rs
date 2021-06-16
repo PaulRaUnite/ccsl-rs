@@ -19,7 +19,10 @@ use ccsl::lccsl::gen::{
     circle_spec, random_connected_specification, random_specification, star, to_precedence_spec,
     to_subclocking_spec, TreeIterator,
 };
-use ccsl::lccsl::opti::{optimize_by_tree_depth, optimize_by_tree_width, optimize_spec_by_sort};
+use ccsl::lccsl::opti::{
+    optimize_by_tree_depth, optimize_by_tree_width, optimize_component_by_tree_depth,
+    optimize_component_by_tree_width, optimize_spec_by_weights,
+};
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use rand::{RngCore, SeedableRng};
@@ -142,12 +145,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     //         TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&inverse_graph(tr)))
     //     }),
     // )?;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(12345678);
+    let mut rng = rand::rngs::StdRng::from_entropy();
     let mut specs = Vec::new();
-    for size in 3..=6 {
+    for size in 3..=7 {
         for _ in 0..(100 - 10 * size) {
             let seed = rng.next_u64();
-            specs.push((seed, random_connected_specification(seed, size)));
+            specs.push((seed, random_connected_specification(seed, size, false)));
         }
     }
     analyse_specs(&data_dir.join("random"), specs)?;
@@ -241,7 +244,7 @@ where
         in_buffer.extend(chunk);
         out_buffer.clear();
         out_buffer.par_extend(in_buffer.iter().par_bridge().flat_map(|(spec, spec_id)| {
-            let opti_spec_perm = optimize_by_tree_depth::<u32, L>(spec);
+            let opti_spec_perm = optimize_component_by_tree_depth::<u32, L>(spec);
             let opti_spec = opti_spec_perm.apply_slice(spec.as_slice());
             let perm_id = lehmer::Lehmer::from_permutation(
                 &opti_spec_perm.apply_slice(

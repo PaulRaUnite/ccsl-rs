@@ -1,4 +1,6 @@
-use crate::lccsl::algo::{approx_conflict_map, approx_conflict_map_undirect};
+use crate::lccsl::algo::{
+    approx_conflict_map, approx_conflict_map_undirect, ConflictEffect, ConflictSource,
+};
 use crate::lccsl::automata::{Label, STSBuilder, STS};
 use crate::lccsl::constraints::Constraint;
 use itertools::Itertools;
@@ -15,7 +17,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::ops::BitOr;
 
-pub fn optimize_spec_by_sort<C, L>(spec: &[Constraint<C>]) -> Permutation
+pub fn optimize_spec_by_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
@@ -26,7 +28,7 @@ where
     sort(weights)
 }
 
-pub fn squished_map<C, L>(spec: &[Constraint<C>]) -> UnGraph<usize, usize>
+pub fn unidirect_squished_map<C, L>(spec: &[Constraint<C>]) -> UnGraph<usize, usize>
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
@@ -53,6 +55,26 @@ where
         }
     }
     new
+}
+
+fn squished_map<C, L>(spec: &[Constraint<C>]) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let squished_spec: Vec<STS<C, L>> = spec
+        .iter()
+        .map(|c| {
+            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
+                .squish()
+                .into()
+        })
+        .collect_vec();
+    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
+    let conflict_map = approx_conflict_map(&squished_spec, &comb);
+    conflict_map
 }
 
 fn spec_weights<C, L>(spec: &[Constraint<C>]) -> (UnGraph<usize, usize>, Vec<(Ratio<usize>, usize)>)
@@ -83,16 +105,13 @@ where
                 conflict_map
                     .edges_directed(n, Direction::Outgoing)
                     .map(|e| e.weight().solutions)
-                    .sum::<Ratio<usize>>()
-                    / count
+                    .min()
+                    .unwrap()
             };
-            (
-                w * conflict_map.node_weight(n).unwrap().transitions,
-                spec[n.index()].rank(),
-            )
+            (w, spec[n.index()].rank())
         })
         .collect_vec();
-    let conflict_map = squished_map(spec);
+    let conflict_map = unidirect_squished_map(spec);
     (conflict_map, weights)
 }
 
@@ -120,7 +139,7 @@ where
     F: Fn(&[Constraint<C>]) -> Permutation,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
+    let conflict_map = unidirect_squished_map(spec);
     let mut spec_perm = Vec::with_capacity(spec.len());
     for comp_map in get_components(&conflict_map) {
         let comp = comp_map.iter().map(|i| spec[*i].clone()).collect_vec();
@@ -166,7 +185,8 @@ where
 
     let spanning_tree = min_spanning_tree(&map);
     let tree: UnGraph<_, _> = Graph::from_elements(spanning_tree);
-    let root_idx = find_suitable_root(&map, &weights);
+    let root_idx = find_root(&map, &weights);
+
     let mut bfs = Bfs::new(&tree, NodeIndex::new(root_idx));
     let mut perm = Vec::with_capacity(spec.len());
     while let Some(nx) = bfs.next(&tree) {
@@ -194,7 +214,7 @@ where
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
     let (map, weights) = spec_weights(spec);
-    let root_idx = find_suitable_root(&map, &weights);
+    let root_idx = find_root(&map, &weights);
 
     let tree: UnGraph<_, _> = Graph::from_elements(min_spanning_tree(&map));
     let mut dfs = Dfs::new(&tree, NodeIndex::new(root_idx));
@@ -228,15 +248,21 @@ where
     Permutation::from_vec(perm)
 }
 
-fn find_suitable_root(map: &UnGraph<usize, usize>, weights: &Vec<(Ratio<usize>, usize)>) -> usize {
-    let leaves = map
-        .node_indices()
+fn find_root(map: &UnGraph<usize, usize>, weights: &Vec<(Ratio<usize>, usize)>) -> usize {
+    map.node_indices()
         .zip(weights.iter())
-        .filter(|(n, _)| map.neighbors(*n).count() == 1)
-        .collect_vec();
-    if leaves.len() > 0 {
-        leaves.iter().min_by_key(|(_, w)| *w).unwrap().0.index()
-    } else {
-        weights.iter().position_min().unwrap()
-    }
+        .min_by_key(|(_, w)| *w)
+        .unwrap()
+        .0
+        .index()
 }
+//
+// pub fn optimize_by_backtracking<C, L>(spec: &[Constraint<C>]) -> Permutation
+// where
+//     C: Clone + Hash + Ord + Display,
+//     L: Clone + Eq + Hash,
+//     L: Label<C>,
+//     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+// {
+//     let dependencies = squished_map::<C, L>(spec);
+// }

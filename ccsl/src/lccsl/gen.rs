@@ -421,8 +421,13 @@ fn expression_clocks(
     rng: &mut StdRng,
     known: &BTreeSet<usize>,
     clock_size: usize,
+    fixed_size: bool,
 ) -> (usize, BTreeSet<usize>) {
-    let size = rng.gen_range(2..clock_size);
+    let size = if fixed_size {
+        3
+    } else {
+        rng.gen_range(3..clock_size)
+    };
     let mut all = Vec::with_capacity(size);
     let first = *known.iter().choose(rng).unwrap();
     all.push(first);
@@ -434,7 +439,11 @@ fn expression_clocks(
     (*first, tail.iter().copied().collect())
 }
 
-pub fn random_connected_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
+pub fn random_connected_specification(
+    seed: u64,
+    size: usize,
+    fixed_size: bool,
+) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(size);
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let clock_size = 2 * size;
@@ -476,37 +485,53 @@ pub fn random_connected_specification(seed: u64, size: usize) -> Vec<Constraint<
                 Subclocking { left, right }.into()
             }
             3 => {
-                let (out, mut others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
-                others.insert(out);
-                known_clocks.extend(others.iter().copied());
-                Exclusion { clocks: others }.into()
+                if fixed_size {
+                    let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                    let clocks = vec![left, right];
+                    known_clocks.extend(clocks.iter().copied());
+                    Exclusion {
+                        clocks: clocks.into_iter().collect(),
+                    }
+                    .into()
+                } else {
+                    let (out, mut others) =
+                        expression_clocks(&mut rng, &mut known_clocks, clock_size, false);
+                    others.insert(out);
+                    known_clocks.extend(others.iter().copied());
+                    Exclusion { clocks: others }.into()
+                }
             }
             4 => {
-                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (out, others) =
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Union { out, args: others }.into()
             }
             5 => {
-                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (out, others) =
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Intersection { out, args: others }.into()
             }
             6 => {
-                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (out, others) =
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Infinity { out, args: others }.into()
             }
             7 => {
-                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (out, others) =
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Supremum { out, args: others }.into()
             }
             8 => {
-                let (out, others) = expression_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (out, others) =
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Minus {
