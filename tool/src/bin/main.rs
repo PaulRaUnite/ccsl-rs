@@ -5,76 +5,34 @@ extern crate parquet;
 extern crate rand;
 
 use std::error::Error;
+use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use structopt::StructOpt;
-
-use ccsl::lccsl::algo::generate_combinations;
-use ccsl::lccsl::automata::{
-    ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, STSBuilder, StateRef, StaticBitmapLabel,
-    STS,
-};
-use ccsl::lccsl::constraints::{Constraint, Specification};
-use ccsl::lccsl::gen::{
-    circle_spec, random_connected_specification, random_specification, star, to_precedence_spec,
-    to_subclocking_spec, TreeIterator,
-};
-use ccsl::lccsl::opti::{
-    optimize_by_tree_depth, optimize_by_tree_width, optimize_component_by_tree_depth,
-    optimize_component_by_tree_width, optimize_spec_by_weights,
-};
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use rand::{RngCore, SeedableRng};
 use rayon::prelude::{IntoParallelRefIterator, ParallelBridge, ParallelExtend, ParallelIterator};
-use std::fs::File;
-use std::iter::Enumerate;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use structopt::StructOpt;
+
+use ccsl::lccsl::algo::generate_combinations;
+use ccsl::lccsl::automata::{
+    ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, StateRef, StaticBitmapLabel, STS,
+};
+use ccsl::lccsl::constraints::Constraint;
+use ccsl::lccsl::gen::{
+    circle_spec, random_connected_specification, star, to_precedence_spec, to_subclocking_spec,
+    TreeIterator,
+};
+use ccsl::lccsl::opti::optimize_component_by_tree_depth;
 use tool::{
     analyze_specification, analyze_specification_combination, analyze_squish_specification,
-    gen_spec, gen_spec_flat, inverse_graph, vec_into_vec, write_graph_no_label, SpecCombParams,
-    SquishedParams,
+    gen_spec, gen_spec_flat, inverse_graph, vec_into_vec, SpecCombParams, SquishedParams,
 };
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "basic", about = "Visualization of LightCCSL constraints")]
+#[structopt(name = "basic", about = "Processing of LightCCSL constraints")]
 struct Opt {
-    // // A flag, true if used in the command line. Note doc comment will
-    // // be used for the help message of the flag. The name of the
-    // // argument will be, by default, based on the name of the field.
-    // /// Activate debug mode
-    // #[structopt(short, long)]
-    // debug: bool,
-    //
-    // // The number of occurrences of the `v/verbose` flag
-    // /// Verbose mode (-v, -vv, -vvv, etc.)
-    // #[structopt(short, long, parse(from_occurrences))]
-    // verbose: u8,
-    //
-    // /// Set speed
-    // #[structopt(short, long, default_value = "42")]
-    // speed: f64,
-    //
-    // /// Output file
-    // #[structopt(short, long, parse(from_os_str))]
-    // output: PathBuf,
-    //
-    // // the long option will be translated by default to kebab case,
-    // // i.e. `--nb-cars`.
-    // /// Number of cars
-    // #[structopt(short = "c", long)]
-    // nb_cars: Option<i32>,
-    //
-    // /// admin_level to consider
-    // #[structopt(short, long)]
-    // level: Vec<String>,
-    /// Files to process
-    #[structopt(
-        name = "DIR",
-        parse(from_os_str),
-        default_value = "/home/paulra/Code/ccsl-rs/tool/dot/"
-    )]
     dir: PathBuf,
 }
 
@@ -85,66 +43,56 @@ type L = StaticBitmapLabel;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
-    // all_constraints(&opt.dir.join("constraints"))?;
 
-    let g = star(5, 3).unwrap();
-    write_graph_no_label(&g, &opt.dir.join("gen"), "star")?;
-    println!("{:?}", to_precedence_spec(&g));
-    println!("{:?}", to_subclocking_spec(&g));
-
-    for (i, g) in TreeIterator::new(9).enumerate() {
-        write_graph_no_label(&g, &opt.dir.join("gen/test"), &i.to_string())?;
-    }
-
-    let data_dir = Path::new("/home/paulra/Code/ccsl-rs/plotter/data/");
-    // analyse_specs(
-    //     &data_dir.join("circle"),
-    //     gen_spec(3..=6, |size| circle_spec(size).unwrap()),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("star/precedence"),
-    //     gen_spec(3..=6, |size| to_precedence_spec(&star(size, 3).unwrap())),
-    // )?;
-    // analyse_specs(
-    //     data_dir.join("star/subclocking"),
-    //     gen_spec(3..=6, |size| to_subclocking_spec(&star(size, 3).unwrap())),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("tree/precedence"),
-    //     gen_spec_flat(3..=6, |size| {
-    //         TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&tr))
-    //     }),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("tree/subclocking"),
-    //     gen_spec_flat(3..=6, |size| {
-    //         TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&tr))
-    //     }),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("star/inverse/precedence"),
-    //     gen_spec(3..=6, |size| {
-    //         to_precedence_spec(&inverse_graph(star(size, 3).unwrap()))
-    //     }),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("star/inverse/subclocking"),
-    //     gen_spec(3..=6, |size| {
-    //         to_subclocking_spec(&inverse_graph(star(size, 3).unwrap()))
-    //     }),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("tree/inverse/precedence"),
-    //     gen_spec_flat(3..=6, |size| {
-    //         TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&inverse_graph(tr)))
-    //     }),
-    // )?;
-    // analyse_specs(
-    //     &data_dir.join("tree/inverse/subclocking"),
-    //     gen_spec_flat(3..=6, |size| {
-    //         TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&inverse_graph(tr)))
-    //     }),
-    // )?;
+    let data_dir = opt.dir;
+    analyse_specs(
+        &data_dir.join("circle"),
+        gen_spec(3..=6, |size| circle_spec(size).unwrap()),
+    )?;
+    analyse_specs(
+        &data_dir.join("star/precedence"),
+        gen_spec(3..=6, |size| to_precedence_spec(&star(size, 3).unwrap())),
+    )?;
+    analyse_specs(
+        &data_dir.join("star/subclocking"),
+        gen_spec(3..=6, |size| to_subclocking_spec(&star(size, 3).unwrap())),
+    )?;
+    analyse_specs(
+        &data_dir.join("tree/precedence"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&tr))
+        }),
+    )?;
+    analyse_specs(
+        &data_dir.join("tree/subclocking"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&tr))
+        }),
+    )?;
+    analyse_specs(
+        &data_dir.join("star/inverse/precedence"),
+        gen_spec(3..=6, |size| {
+            to_precedence_spec(&inverse_graph(star(size, 3).unwrap()))
+        }),
+    )?;
+    analyse_specs(
+        &data_dir.join("star/inverse/subclocking"),
+        gen_spec(3..=6, |size| {
+            to_subclocking_spec(&inverse_graph(star(size, 3).unwrap()))
+        }),
+    )?;
+    analyse_specs(
+        &data_dir.join("tree/inverse/precedence"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_precedence_spec(&inverse_graph(tr)))
+        }),
+    )?;
+    analyse_specs(
+        &data_dir.join("tree/inverse/subclocking"),
+        gen_spec_flat(3..=6, |size| {
+            TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&inverse_graph(tr)))
+        }),
+    )?;
     let mut rng = rand::rngs::StdRng::from_entropy();
     let mut specs = Vec::new();
     for size in 3..=7 {

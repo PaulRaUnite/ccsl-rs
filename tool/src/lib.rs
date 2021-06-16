@@ -569,9 +569,9 @@ where
 }
 
 pub fn gen_spec<C>(
-    r: impl IntoIterator<Item = usize>,
-    gen: impl FnMut(usize) -> Vec<Constraint<C>>,
-) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)> {
+    r: impl Iterator<Item = usize> + Clone,
+    gen: impl FnMut(usize) -> Vec<Constraint<C>> + Clone,
+) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)> + Clone {
     r.into_iter()
         .map(gen)
         .enumerate()
@@ -579,11 +579,11 @@ pub fn gen_spec<C>(
 }
 
 pub fn gen_spec_flat<C, I>(
-    r: impl IntoIterator<Item = usize>,
-    gen: impl FnMut(usize) -> I,
-) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)>
+    r: impl Iterator<Item = usize> + Clone,
+    gen: impl FnMut(usize) -> I + Clone,
+) -> impl Iterator<Item = (u64, Vec<Constraint<C>>)> + Clone
 where
-    I: Iterator<Item = Vec<Constraint<C>>>,
+    I: Iterator<Item = Vec<Constraint<C>>> + Clone,
 {
     r.into_iter()
         .flat_map(gen)
