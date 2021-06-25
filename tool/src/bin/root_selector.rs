@@ -1,11 +1,7 @@
 use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
 use ccsl::lccsl::gen::random_connected_specification;
 use ccsl::lccsl::opti::{
-    optimize_by_tree_depth, optimize_component_by_tree_depth,
-    optimize_component_by_tree_depth_by_root, optimize_component_by_weighted_topology,
-    optimize_component_by_weighted_topology_root,
-    optimize_component_by_weighted_topology_with_networkx,
-    optimize_component_by_weighted_topology_with_tricost_root, optimize_spec_by_weights,
+    optimize_by_min_front_init_weights, optimize_by_min_front_init_weights_root,
 };
 use itertools::Itertools;
 use std::error::Error;
@@ -42,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .map(|(spec, perm_vec, perm_id)| {
             let opti_spec_perm =
-                optimize_component_by_weighted_topology_root::<u32, L>(spec.as_slice(), 0);
+                optimize_by_min_front_init_weights_root::<u32, L>(spec.as_slice(), 0);
             let new_perm_id =
                 lehmer::Lehmer::from_permutation(&opti_spec_perm.apply_slice(perm_vec))
                     .to_decimal();
@@ -74,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .min_by_key(|(_, p1, p2)| (p1.real.test, p2.real.down));
     let opti = {
-        let opti_perm = optimize_component_by_weighted_topology_with_tricost_root::<_, L>(&spec);
+        let opti_perm = optimize_by_min_front_init_weights::<_, L>(&spec);
         println!("{:?}", opti_perm);
         let opti = opti_perm.apply_slice(spec.as_slice());
         let perm_id = lehmer::Lehmer::from_permutation(

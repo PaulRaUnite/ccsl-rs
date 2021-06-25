@@ -1,16 +1,17 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::BitOr;
 
 use itertools::Itertools;
 use num::rational::Ratio;
-use petgraph::prelude::EdgeRef;
+use petgraph::prelude::{EdgeRef, UnGraph};
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Label, MergedTransition, StateRef, STS};
+use crate::lccsl::automata::{Label, MergedTransition, STSBuilder, StateRef, STS};
+use crate::lccsl::constraints::Constraint;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConflictEffect<R> {
@@ -394,4 +395,55 @@ where
     spec.iter()
         .map(|sts| sts.states())
         .multi_cartesian_product()
+}
+
+pub fn unidirect_squished_map<C, L>(spec: &[Constraint<C>]) -> UnGraph<usize, usize>
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let squished_spec: Vec<STS<C, L>> = spec
+        .iter()
+        .map(|c| {
+            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
+                .squish()
+                .into()
+        })
+        .collect_vec();
+    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
+    let conflict_map = approx_conflict_map_undirect(&squished_spec, &comb);
+    let mut new = Graph::with_capacity(conflict_map.node_count(), conflict_map.edge_count() / 2);
+    for n in conflict_map.raw_nodes() {
+        new.add_node(n.weight.transitions);
+    }
+    for e in conflict_map.raw_edges() {
+        if new.edges_connecting(e.source(), e.target()).count() == 0 {
+            new.add_edge(e.source(), e.target(), e.weight.solutions);
+        }
+    }
+    new
+}
+
+pub fn squished_conflict_map<C, L>(
+    spec: &[Constraint<C>],
+) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let squished_spec: Vec<STS<C, L>> = spec
+        .iter()
+        .map(|c| {
+            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
+                .squish()
+                .into()
+        })
+        .collect_vec();
+    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
+    let conflict_map = approx_conflict_map(&squished_spec, &comb);
+    conflict_map
 }

@@ -1,19 +1,3 @@
-use crate::lccsl::algo::{
-    approx_conflict_map, approx_conflict_map_undirect, ConflictEffect, ConflictSource,
-};
-use crate::lccsl::automata::{Label, STSBuilder, STS};
-use crate::lccsl::constraints::Constraint;
-use itertools::Itertools;
-use na::{DMatrix, DVector};
-use num::rational::Ratio;
-use num::{ToPrimitive, Zero};
-use permutation::{sort, Permutation};
-use petgraph::algo::{dijkstra, min_spanning_tree};
-use petgraph::data::{DataMap, FromElements};
-use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::unionfind::UnionFind;
-use petgraph::visit::{Bfs, Dfs, EdgeRef, IntoEdgesDirected, NodeIndexable};
-use petgraph::{Direction, Graph};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
@@ -22,74 +6,40 @@ use std::mem::swap;
 use std::ops::{Add, BitOr};
 use std::process::{Command, Stdio};
 
-pub fn optimize_spec_by_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
+use itertools::Itertools;
+use na::{DMatrix, DVector};
+use num::rational::Ratio;
+use num::{ToPrimitive, Zero};
+use permutation::{sort, Permutation};
+use petgraph::algo::{dijkstra, min_spanning_tree};
+use petgraph::data::FromElements;
+use petgraph::graph::{NodeIndex, UnGraph};
+use petgraph::unionfind::UnionFind;
+use petgraph::visit::{Bfs, Dfs, EdgeRef, NodeIndexable};
+use petgraph::{Direction, Graph};
+
+use crate::lccsl::algo::{
+    squished_conflict_map, unidirect_squished_map, ConflictEffect, ConflictSource,
+};
+use crate::lccsl::automata::Label;
+use crate::lccsl::constraints::Constraint;
+use crate::lccsl::opti::root::weights_with_init;
+
+pub fn optimize_by_sort_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let weights = weights_by_min_outgoing(spec);
+    let map = squished_conflict_map(spec);
+    let weights = weights_from_min_outgoing(&map);
     sort(weights)
 }
 
-pub fn unidirect_squished_map<C, L>(spec: &[Constraint<C>]) -> UnGraph<usize, usize>
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-                .into()
-        })
-        .collect_vec();
-    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
-    let conflict_map = approx_conflict_map_undirect(&squished_spec, &comb);
-    let mut new = Graph::with_capacity(conflict_map.node_count(), conflict_map.edge_count() / 2);
-    for n in conflict_map.raw_nodes() {
-        new.add_node(n.weight.transitions);
-    }
-    for e in conflict_map.raw_edges() {
-        if new.edges_connecting(e.source(), e.target()).count() == 0 {
-            new.add_edge(e.source(), e.target(), e.weight.solutions);
-        }
-    }
-    new
-}
-
-fn squished_map<C, L>(spec: &[Constraint<C>]) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-                .into()
-        })
-        .collect_vec();
-    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
-    let conflict_map = approx_conflict_map(&squished_spec, &comb);
-    conflict_map
-}
-
-fn weights_by_min_outgoing<C, L>(spec: &[Constraint<C>]) -> Vec<(Ratio<usize>, usize)>
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let conflict_map = squished_map(spec);
+fn weights_from_min_outgoing(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+) -> Vec<Ratio<usize>> {
     let weights = conflict_map
         .node_indices()
         .into_iter()
@@ -104,10 +54,16 @@ where
                     .min()
                     .unwrap()
             };
-            (w, spec[n.index()].rank())
+            w
         })
         .collect_vec();
     weights
+}
+
+pub fn root_by_min_outgoing(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+) -> usize {
+    find_root(&weights_from_min_outgoing(conflict_map))
 }
 
 fn get_components<N, E>(g: &UnGraph<N, E>) -> impl Iterator<Item = Vec<usize>> {
@@ -159,6 +115,16 @@ where
     Permutation::from_vec(spec_perm)
 }
 
+pub fn optimize_unconnected_by_tree_width<C, L>(spec: &[Constraint<C>]) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    split_merge_components(spec, optimize_by_tree_width)
+}
+
 pub fn optimize_by_tree_width<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
@@ -166,22 +132,12 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    split_merge_components(spec, optimize_component_by_tree_width)
-}
+    let map = squished_conflict_map(spec);
+    let root_idx = root_by_min_outgoing(&map);
 
-pub fn optimize_component_by_tree_width<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let weights = weights_by_min_outgoing(spec);
     let map = unidirect_squished_map(spec);
-
     let spanning_tree = min_spanning_tree(&map);
     let tree: UnGraph<_, _> = Graph::from_elements(spanning_tree);
-    let root_idx = find_root(&weights);
 
     let mut bfs = Bfs::new(&tree, NodeIndex::new(root_idx));
     let mut perm = Vec::with_capacity(spec.len());
@@ -192,6 +148,16 @@ where
     Permutation::from_vec(perm)
 }
 
+pub fn optimize_unconnected_by_tree_depth<C, L>(spec: &[Constraint<C>]) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    split_merge_components(spec, optimize_by_tree_depth)
+}
+
 pub fn optimize_by_tree_depth<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
@@ -199,20 +165,10 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    split_merge_components(spec, optimize_component_by_tree_depth)
-}
+    let map = squished_conflict_map(spec);
+    let root_idx = root_by_min_outgoing(&map);
 
-pub fn optimize_component_by_tree_depth<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let weights = weights_by_min_outgoing(spec);
     let map = unidirect_squished_map(spec);
-
-    let root_idx = find_root(&weights);
 
     let tree: UnGraph<_, _> = Graph::from_elements(min_spanning_tree(&map));
     let mut dfs = Dfs::new(&tree, NodeIndex::new(root_idx));
@@ -250,21 +206,20 @@ fn find_root<T: Ord>(weights: &Vec<T>) -> usize {
     weights.iter().position_min().unwrap()
 }
 
-pub fn optimize_component_by_weighted_topology<C, L>(spec: &[Constraint<C>]) -> Permutation
+pub fn optimize_by_min_front_init_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
-    let weights = weights_with_init(&conflict_map);
-    let root_idx = find_root(&weights);
+    let conflict_map = squished_conflict_map(spec);
+    let root_idx = weights_with_init(&conflict_map);
 
     order_by_min_front(&conflict_map, root_idx)
 }
 
-pub fn optimize_component_by_weighted_topology_root<C, L>(
+pub fn optimize_by_min_front_init_weights_root<C, L>(
     spec: &[Constraint<C>],
     root: usize,
 ) -> Permutation
@@ -274,44 +229,9 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
+    let conflict_map = squished_conflict_map(spec);
 
     order_by_min_front(&conflict_map, root)
-}
-
-fn weights_with_init(
-    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
-) -> Vec<(Ratio<usize>, Ratio<usize>)> {
-    let weights = conflict_map
-        .node_indices()
-        .into_iter()
-        .map(|n| {
-            let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
-            if count == 0 {
-                (
-                    conflict_map.node_weight(n).unwrap().transitions.into(),
-                    Ratio::zero(),
-                )
-            } else {
-                (
-                    conflict_map
-                        .edges_directed(n, Direction::Outgoing)
-                        .map(|e| {
-                            e.weight().solutions
-                                * conflict_map.node_weight(e.source()).unwrap().transitions
-                        })
-                        .min()
-                        .unwrap(),
-                    conflict_map
-                        .edges_directed(n, Direction::Outgoing)
-                        .map(|e| e.weight().solutions)
-                        .sum::<Ratio<usize>>()
-                        / Ratio::new(count, 1),
-                )
-            }
-        })
-        .collect_vec();
-    weights
 }
 
 fn order_via_dijkstra(
@@ -382,16 +302,14 @@ impl Default for Weight {
     }
 }
 
-pub fn optimize_component_by_weighted_topology_with_networkx<C, L>(
-    spec: &[Constraint<C>],
-) -> Permutation
+pub fn optimize_dijkstra_with_networkx_root<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
+    let conflict_map = squished_conflict_map(spec);
     let root_idx = networkx_root(&conflict_map);
     order_via_dijkstra(&conflict_map, root_idx)
 }
@@ -454,20 +372,17 @@ fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>
         res *= &adjacency;
     }
     let weights = res * weights;
-    println!("{:?}", &weights);
     weights.argmin().0
 }
 
-pub fn optimize_component_by_weighted_topo_from_heatmap_root<C, L>(
-    spec: &[Constraint<C>],
-) -> Permutation
+pub fn optimize_dijkstra_with_heatmap_root<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
+    let conflict_map = squished_conflict_map(spec);
     let root = heatmap_root(&conflict_map);
     order_via_dijkstra(&conflict_map, root)
 }
@@ -490,9 +405,7 @@ where
 //     0
 // }
 //
-fn find_root_by_tricost(
-    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
-) -> usize {
+fn root_by_tricost(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
     if conflict_map.node_count() <= 2 {
         0
     } else {
@@ -545,17 +458,83 @@ fn find_root_by_tricost(
     }
 }
 
-pub fn optimize_component_by_weighted_topology_with_tricost_root<C, L>(
-    spec: &[Constraint<C>],
-) -> Permutation
+pub fn optimize_by_min_front_with_tricost_root<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let conflict_map = squished_map(spec);
-    let root = find_root_by_tricost(&conflict_map);
+    let conflict_map = squished_conflict_map(spec);
+    let root = root_by_tricost(&conflict_map);
 
     order_by_min_front(&conflict_map, root)
 }
+
+pub type Rooter = dyn Fn(&Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize;
+pub type Orderer =
+    dyn Fn(&Graph<ConflictSource, ConflictEffect<Ratio<usize>>>, usize) -> Permutation;
+
+pub fn optimize<C, L>(spec: &[Constraint<C>], rooter: &Rooter, orderer: &Orderer) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let map = squished_conflict_map::<C, L>(spec);
+    let root = rooter(&map);
+    orderer(&map, root)
+}
+
+pub mod root {
+    use itertools::Itertools;
+    use num::rational::Ratio;
+    use num::Zero;
+    use petgraph::prelude::EdgeRef;
+    use petgraph::{Direction, Graph};
+    use rand::{Rng, SeedableRng};
+
+    use crate::lccsl::algo::{ConflictEffect, ConflictSource};
+
+    pub fn weights_with_init(
+        conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+    ) -> usize {
+        let weights = conflict_map
+            .node_indices()
+            .into_iter()
+            .map(|n| {
+                let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
+                if count == 0 {
+                    (
+                        conflict_map.node_weight(n).unwrap().transitions.into(),
+                        Ratio::zero(),
+                    )
+                } else {
+                    (
+                        conflict_map
+                            .edges_directed(n, Direction::Outgoing)
+                            .map(|e| {
+                                e.weight().solutions
+                                    * conflict_map.node_weight(e.source()).unwrap().transitions
+                            })
+                            .min()
+                            .unwrap(),
+                        conflict_map
+                            .edges_directed(n, Direction::Outgoing)
+                            .map(|e| e.weight().solutions)
+                            .sum::<Ratio<usize>>()
+                            / Ratio::new(count, 1),
+                    )
+                }
+            })
+            .collect_vec();
+        weights.iter().position_min().unwrap()
+    }
+
+    pub fn random(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+        rand::rngs::StdRng::from_entropy().gen_range(0..conflict_map.node_count())
+    }
+}
+
+pub mod order {}

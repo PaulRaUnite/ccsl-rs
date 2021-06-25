@@ -1,7 +1,6 @@
-use ccsl::lccsl::algo::approx_conflict_map;
+use ccsl::lccsl::algo::{squished_conflict_map, unidirect_squished_map};
 use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
 use ccsl::lccsl::gen::random_connected_specification;
-use ccsl::lccsl::opti::unidirect_squished_map;
 use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;
 use petgraph::algo::min_spanning_tree;
@@ -81,9 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (analysis, _) = analyze_specification(&spec, spec_id, variant);
     println!("{:?}", analysis.into_iter().max_by_key(|p| p.real.test));
 
-    let spec = spec.into_iter().map(|c| c.squish()).collect_vec();
-    let conflicts = approx_conflict_map(&spec, &spec.iter().map(|c| c.initial()).collect_vec());
-
+    let conflicts = squished_conflict_map::<_, L>(&perm);
     write_graph_indexed(&conflicts, dir, "conflict")?;
     let undirect_conflicts = unidirect_squished_map::<_, L>(&perm);
     write_graph_indexed_debug(&undirect_conflicts, dir, "undirected_conflict")?;

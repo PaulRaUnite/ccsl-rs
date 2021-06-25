@@ -10,7 +10,6 @@ extern crate rand;
 extern crate thiserror;
 
 pub mod lccsl {
-    #![allow(dead_code)]
     pub mod constraints;
 
     pub mod automata;

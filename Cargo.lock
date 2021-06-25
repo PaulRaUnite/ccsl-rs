@@ -254,17 +254,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "concat-arrays"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1df715824eb382e34b7afb7463b0247bf41538aeba731fba05241ecdb5dc3747"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1237,7 +1226,6 @@ version = "0.1.0"
 dependencies = [
  "arrow",
  "ccsl",
- "concat-arrays",
  "csv",
  "itertools",
  "lehmer",

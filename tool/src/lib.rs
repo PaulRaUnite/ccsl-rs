@@ -1,6 +1,4 @@
 extern crate arrow;
-#[macro_use]
-extern crate concat_arrays;
 extern crate itertools;
 extern crate num;
 extern crate rayon;
@@ -18,7 +16,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, StructArray, UInt32Array, UInt64Array, UInt8Array};
-use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use num::ToPrimitive;
@@ -40,6 +38,7 @@ use ccsl::lccsl::constraints::{
     Subclocking, Union,
 };
 use ccsl::lccsl::vizualization::unfold_specification;
+use parquet::arrow::ArrowWriter;
 use std::convert::TryInto;
 
 pub fn write_graph<N: Display, E: Display, D: EdgeType>(
@@ -106,8 +105,13 @@ pub struct SpecCombParams {
     pub clocks: usize,
 }
 
-impl SpecCombParams {
-    pub fn schema() -> Schema {
+pub trait ToArrow: Sized {
+    fn schema() -> Schema;
+    fn batch(data: &Vec<Self>) -> Result<RecordBatch, Box<dyn Error>>;
+}
+
+impl ToArrow for SpecCombParams {
+    fn schema() -> Schema {
         let criteria_type = Criteria::arrow_type();
         Schema::new(vec![
             Field::new("spec", DataType::UInt64, false),
@@ -121,10 +125,7 @@ impl SpecCombParams {
         ])
     }
 
-    pub fn batch(
-        schema: SchemaRef,
-        data: &Vec<SpecCombParams>,
-    ) -> Result<RecordBatch, Box<dyn Error>> {
+    fn batch(data: &Vec<Self>) -> Result<RecordBatch, Box<dyn Error>> {
         let size = data.len();
         let mut spec_vec = Vec::with_capacity(size);
         let mut var_vec = Vec::with_capacity(size);
@@ -195,7 +196,7 @@ impl SpecCombParams {
         ]));
 
         let result = RecordBatch::try_new(
-            schema,
+            Arc::new(Self::schema()),
             vec![
                 spec_vec, var_vec, comb_vec, size_vec, real, limit, approx, clocks_vec,
             ],
@@ -213,15 +214,8 @@ pub struct SquishedParams {
     pub approx: Criteria,
 }
 
-impl SquishedParams {
-    pub fn into_array(self) -> [u64; 8] {
-        let local = [self.spec, self.variant];
-        let limit = self.limit.into_array();
-        let approx = self.approx.into_array();
-        concat_arrays!(local, limit, approx)
-    }
-
-    pub fn schema() -> Schema {
+impl ToArrow for SquishedParams {
+    fn schema() -> Schema {
         let criteria_type = Criteria::arrow_type();
         Schema::new(vec![
             Field::new("spec", DataType::UInt64, false),
@@ -232,10 +226,7 @@ impl SquishedParams {
         ])
     }
 
-    pub fn batch(
-        schema: SchemaRef,
-        data: &Vec<SquishedParams>,
-    ) -> Result<RecordBatch, Box<dyn Error>> {
+    fn batch(data: &Vec<Self>) -> Result<RecordBatch, Box<dyn Error>> {
         let size = data.len();
         let mut spec_vec = Vec::with_capacity(size);
         let mut var_vec = Vec::with_capacity(size);
@@ -283,8 +274,10 @@ impl SquishedParams {
             (solution_f, approx_solution_vec),
         ]));
 
-        let result =
-            RecordBatch::try_new(schema, vec![spec_vec, var_vec, size_vec, limit, approx])?;
+        let result = RecordBatch::try_new(
+            Arc::new(Self::schema()),
+            vec![spec_vec, var_vec, size_vec, limit, approx],
+        )?;
         Ok(result)
     }
 }
@@ -603,4 +596,61 @@ pub fn inverse_graph<N, E>(g: Graph<N, E, Directed>) -> Graph<N, E, Directed> {
         new.add_edge(e.target(), e.source(), e.weight);
     }
     new
+}
+
+pub fn stream_to_parquet_flat<I, O, F>(
+    filepath: &Path,
+    stream: impl IntoIterator<Item = I>,
+    map: F,
+    chunks: usize,
+    arrow_buffer: usize,
+) -> Result<(), Box<dyn Error>>
+where
+    I: Sized + Sync,
+    O: ToArrow + Send,
+    F: Fn(&I) -> Vec<O> + Sync + Send + Clone,
+{
+    let schema = Arc::new(O::schema());
+    let mut parquet_wrt = ArrowWriter::try_new(File::create(filepath)?, schema, None)?;
+
+    let mut in_buffer: Vec<I> = Vec::with_capacity(chunks);
+    let mut out_buffer: Vec<O> = Vec::with_capacity(arrow_buffer);
+
+    for chunk in &stream.into_iter().chunks(chunks) {
+        in_buffer.clear();
+        in_buffer.extend(chunk);
+        out_buffer.clear();
+        out_buffer.par_extend(in_buffer.iter().par_bridge().flat_map(map.clone()));
+        parquet_wrt.write(&O::batch(&out_buffer)?)?;
+    }
+    parquet_wrt.close()?;
+    Ok(())
+}
+
+pub fn stream_to_parquet<I, O, F>(
+    filepath: &Path,
+    stream: impl IntoIterator<Item = I>,
+    map: F,
+    chunks: usize,
+) -> Result<(), Box<dyn Error>>
+where
+    I: Sized + Sync,
+    O: ToArrow + Send,
+    F: Fn(&I) -> O + Sync + Send + Clone,
+{
+    let schema = Arc::new(O::schema());
+    let mut parquet_wrt = ArrowWriter::try_new(File::create(filepath)?, schema, None)?;
+
+    let mut in_buffer: Vec<I> = Vec::with_capacity(chunks);
+    let mut out_buffer: Vec<O> = Vec::with_capacity(chunks);
+
+    for chunk in &stream.into_iter().chunks(chunks) {
+        in_buffer.clear();
+        in_buffer.extend(chunk);
+        out_buffer.clear();
+        out_buffer.par_extend(in_buffer.iter().par_bridge().map(map.clone()));
+        parquet_wrt.write(&O::batch(&out_buffer)?)?;
+    }
+    parquet_wrt.close()?;
+    Ok(())
 }
