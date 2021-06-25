@@ -682,15 +682,16 @@ impl<C> Constraint<C> {
 
     pub fn rank(&self) -> usize {
         match self {
+            // TODO: define more clearly the ranking
             Constraint::Causality(_) => 2,
             Constraint::Precedence(_) => 2,
             Constraint::SubClock(_) => 1,
             Constraint::Exclusion(_) => 0,
             Constraint::Infinity(_) => 3,
             Constraint::Supremum(_) => 3,
-            Constraint::Union(_) => 4,
-            Constraint::Intersection(_) => 1,
-            Constraint::Minus(_) => 1,
+            Constraint::Union(_) => 2,
+            Constraint::Intersection(_) => 0,
+            Constraint::Minus(_) => 2,
             Constraint::Repeat(_) => 5,
             Constraint::Delay(_) => 0,
         }
