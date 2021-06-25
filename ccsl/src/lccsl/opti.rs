@@ -4,18 +4,23 @@ use crate::lccsl::algo::{
 use crate::lccsl::automata::{Label, STSBuilder, STS};
 use crate::lccsl::constraints::Constraint;
 use itertools::Itertools;
+use na::{DMatrix, DVector};
 use num::rational::Ratio;
+use num::{ToPrimitive, Zero};
 use permutation::{sort, Permutation};
-use petgraph::algo::min_spanning_tree;
-use petgraph::data::FromElements;
+use petgraph::algo::{dijkstra, min_spanning_tree};
+use petgraph::data::{DataMap, FromElements};
 use petgraph::graph::{NodeIndex, UnGraph};
 use petgraph::unionfind::UnionFind;
-use petgraph::visit::{Bfs, Dfs, EdgeRef, NodeIndexable};
+use petgraph::visit::{Bfs, Dfs, EdgeRef, IntoEdgesDirected, NodeIndexable};
 use petgraph::{Direction, Graph};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
-use std::ops::BitOr;
+use std::io::Write;
+use std::mem::swap;
+use std::ops::{Add, BitOr};
+use std::process::{Command, Stdio};
 
 pub fn optimize_spec_by_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
@@ -24,7 +29,7 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let (_, weights) = spec_weights(spec);
+    let weights = weights_by_min_outgoing(spec);
     sort(weights)
 }
 
@@ -77,23 +82,14 @@ where
     conflict_map
 }
 
-fn spec_weights<C, L>(spec: &[Constraint<C>]) -> (UnGraph<usize, usize>, Vec<(Ratio<usize>, usize)>)
+fn weights_by_min_outgoing<C, L>(spec: &[Constraint<C>]) -> Vec<(Ratio<usize>, usize)>
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash,
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-                .into()
-        })
-        .collect_vec();
-    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
-    let conflict_map = approx_conflict_map(&squished_spec, &comb);
+    let conflict_map = squished_map(spec);
     let weights = conflict_map
         .node_indices()
         .into_iter()
@@ -111,8 +107,7 @@ where
             (w, spec[n.index()].rank())
         })
         .collect_vec();
-    let conflict_map = unidirect_squished_map(spec);
-    (conflict_map, weights)
+    weights
 }
 
 fn get_components<N, E>(g: &UnGraph<N, E>) -> impl Iterator<Item = Vec<usize>> {
@@ -181,11 +176,12 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let (map, weights) = spec_weights(spec);
+    let weights = weights_by_min_outgoing(spec);
+    let map = unidirect_squished_map(spec);
 
     let spanning_tree = min_spanning_tree(&map);
     let tree: UnGraph<_, _> = Graph::from_elements(spanning_tree);
-    let root_idx = find_root(&map, &weights);
+    let root_idx = find_root(&weights);
 
     let mut bfs = Bfs::new(&tree, NodeIndex::new(root_idx));
     let mut perm = Vec::with_capacity(spec.len());
@@ -213,8 +209,10 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let (map, weights) = spec_weights(spec);
-    let root_idx = find_root(&map, &weights);
+    let weights = weights_by_min_outgoing(spec);
+    let map = unidirect_squished_map(spec);
+
+    let root_idx = find_root(&weights);
 
     let tree: UnGraph<_, _> = Graph::from_elements(min_spanning_tree(&map));
     let mut dfs = Dfs::new(&tree, NodeIndex::new(root_idx));
@@ -236,7 +234,7 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let (map, _) = spec_weights(spec);
+    let map = unidirect_squished_map(spec);
 
     let tree: UnGraph<_, _> = Graph::from_elements(min_spanning_tree(&map));
     let mut dfs = Dfs::new(&tree, NodeIndex::new(root_idx));
@@ -248,21 +246,316 @@ where
     Permutation::from_vec(perm)
 }
 
-fn find_root(map: &UnGraph<usize, usize>, weights: &Vec<(Ratio<usize>, usize)>) -> usize {
-    map.node_indices()
-        .zip(weights.iter())
-        .min_by_key(|(_, w)| *w)
+fn find_root<T: Ord>(weights: &Vec<T>) -> usize {
+    weights.iter().position_min().unwrap()
+}
+
+pub fn optimize_component_by_weighted_topology<C, L>(spec: &[Constraint<C>]) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
+    let weights = weights_with_init(&conflict_map);
+    let root_idx = find_root(&weights);
+
+    order_by_min_front(&conflict_map, root_idx)
+}
+
+pub fn optimize_component_by_weighted_topology_root<C, L>(
+    spec: &[Constraint<C>],
+    root: usize,
+) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
+
+    order_by_min_front(&conflict_map, root)
+}
+
+fn weights_with_init(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+) -> Vec<(Ratio<usize>, Ratio<usize>)> {
+    let weights = conflict_map
+        .node_indices()
+        .into_iter()
+        .map(|n| {
+            let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
+            if count == 0 {
+                (
+                    conflict_map.node_weight(n).unwrap().transitions.into(),
+                    Ratio::zero(),
+                )
+            } else {
+                (
+                    conflict_map
+                        .edges_directed(n, Direction::Outgoing)
+                        .map(|e| {
+                            e.weight().solutions
+                                * conflict_map.node_weight(e.source()).unwrap().transitions
+                        })
+                        .min()
+                        .unwrap(),
+                    conflict_map
+                        .edges_directed(n, Direction::Outgoing)
+                        .map(|e| e.weight().solutions)
+                        .sum::<Ratio<usize>>()
+                        / Ratio::new(count, 1),
+                )
+            }
+        })
+        .collect_vec();
+    weights
+}
+
+fn order_via_dijkstra(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+    root_idx: usize,
+) -> Permutation {
+    let node_order = dijkstra(&conflict_map, NodeIndex::new(root_idx), None, |e| {
+        Weight(e.weight().solutions)
+    });
+    Permutation::from_vec(
+        node_order
+            .into_iter()
+            .map(|(v, w)| (w, v.index()))
+            .sorted_by(|(w1, _), (w2, _)| Ord::cmp(w1, w2))
+            .map(|(_, v)| v)
+            .collect_vec(),
+    )
+}
+
+fn order_by_min_front(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+    root_idx: usize,
+) -> Permutation {
+    let mut perm = Vec::with_capacity(conflict_map.node_count());
+    perm.push(root_idx);
+
+    let mut edges = conflict_map
+        .raw_edges()
+        .into_iter()
+        .map(|e| (e.source().index(), e.target().index(), e.weight.solutions))
+        .filter(|(_, t, _)| t != &root_idx)
+        .sorted_by_key(|(_, _, w)| *w)
+        .collect_vec();
+    let mut temp = Vec::with_capacity(edges.len());
+    let mut visited = HashSet::new();
+    visited.insert(root_idx);
+
+    while edges.len() > 0 {
+        let next = edges
+            .iter()
+            .filter(|(s, _, _)| visited.contains(s))
+            .next()
+            .expect("failed to get next vertex: not connected?")
+            .1;
+        temp.clear();
+        temp.extend(edges.iter().filter(|(_, t, _)| t != &next).copied());
+        swap(&mut edges, &mut temp);
+        perm.push(next);
+        visited.insert(root_idx);
+    }
+    Permutation::from_vec(perm)
+}
+
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+struct Weight(Ratio<usize>);
+
+impl Add for Weight {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.add(rhs.0))
+    }
+}
+
+impl Default for Weight {
+    fn default() -> Self {
+        Self(Ratio::zero())
+    }
+}
+
+pub fn optimize_component_by_weighted_topology_with_networkx<C, L>(
+    spec: &[Constraint<C>],
+) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
+    let root_idx = networkx_root(&conflict_map);
+    order_via_dijkstra(&conflict_map, root_idx)
+}
+
+fn networkx_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+    let mut proc = Command::new("bash")
+        .arg("/home/paulra/Code/ccsl-rs/rooter/run.sh")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn rooter");
+    let stdin = proc.stdin.as_mut().expect("failed to get stdin");
+    let edge_count = conflict_map.edge_count();
+    for (i, e) in conflict_map.raw_edges().into_iter().enumerate() {
+        write!(
+            stdin,
+            "{} {} {{'weight':{}}}",
+            e.source().index(),
+            e.target().index(),
+            e.weight.solutions.to_f64().expect("failed to get f64")
+        )
+        .expect("failed to write edge");
+        if i != (edge_count - 1) {
+            write!(stdin, "\n").expect("failed to write newline");
+        }
+    }
+
+    let output = proc.wait_with_output().expect("failed to wait for process");
+
+    if !output.status.success() {
+        panic!("command executed with failing error code");
+    }
+    let contents = String::from_utf8(output.stdout).expect("failed to decode utf8");
+    let root = contents
+        .strip_suffix("\n")
         .unwrap()
-        .0
-        .index()
+        .parse()
+        .expect("failed to parse usize from command");
+    assert!(root < conflict_map.node_count());
+    root
+}
+
+fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+    let n = conflict_map.node_count();
+    let weights = DVector::from_vec(
+        conflict_map
+            .raw_nodes()
+            .into_iter()
+            .map(|n| Ratio::from_integer(n.weight.transitions))
+            .collect(),
+    );
+    let mut adjacency = DMatrix::zeros(n, n);
+    for e in conflict_map.raw_edges() {
+        let i = e.source().index();
+        let j = e.target().index();
+        adjacency[(i, j)] = e.weight.solutions;
+    }
+    let mut res = DMatrix::identity(n, n);
+    for _ in 1..n {
+        res *= &adjacency;
+    }
+    let weights = res * weights;
+    println!("{:?}", &weights);
+    weights.argmin().0
+}
+
+pub fn optimize_component_by_weighted_topo_from_heatmap_root<C, L>(
+    spec: &[Constraint<C>],
+) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
+    let root = heatmap_root(&conflict_map);
+    order_via_dijkstra(&conflict_map, root)
 }
 //
-// pub fn optimize_by_backtracking<C, L>(spec: &[Constraint<C>]) -> Permutation
+// pub fn find_root_from_topology<C, L>(spec: &[Constraint<C>]) -> usize
 // where
 //     C: Clone + Hash + Ord + Display,
 //     L: Clone + Eq + Hash,
 //     L: Label<C>,
 //     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 // {
-//     let dependencies = squished_map::<C, L>(spec);
+//     let conflict_map = squished_map(spec);
+//     let (nodes, edges) = (conflict_map.raw_nodes(), conflict_map.raw_edges());
+//
+//     // init
+//     let root = weights_by_min_outgoing(spec)
+//         .into_iter()
+//         .position_min()
+//         .expect("failed to get min");
+//     0
 // }
+//
+fn find_root_by_tricost(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+) -> usize {
+    if conflict_map.node_count() <= 2 {
+        0
+    } else {
+        conflict_map
+            .raw_nodes()
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let edge1 = conflict_map
+                    .edges_directed(NodeIndex::new(i), Direction::Outgoing)
+                    .into_iter()
+                    .min_by_key(|e| e.weight().solutions)
+                    .expect("no edges");
+                let edge2 = conflict_map
+                    .edges_directed(NodeIndex::new(i), Direction::Outgoing)
+                    .into_iter()
+                    .chain(
+                        conflict_map
+                            .edges_directed(edge1.target(), Direction::Outgoing)
+                            .into_iter(),
+                    )
+                    .filter(|e| e.target() != edge1.source() && e.target() != edge1.target())
+                    .min_by_key(|e| e.weight().solutions)
+                    .expect("no more edges");
+                let second_node = conflict_map.node_weight(edge1.target()).unwrap();
+                let third_node = conflict_map.node_weight(edge2.target()).unwrap();
+                let solutions = n.weight.transitions;
+                let complexity_1 = solutions * second_node.transitions;
+                let solutions_1 = edge1.weight().solutions * solutions;
+                let complexity_2 = solutions_1 * third_node.transitions + complexity_1;
+                let solutions_2 = edge2.weight().solutions * solutions_1;
+                // println!(
+                //     "{} ({}) ->({};{}) {} ({}) -> ({};{}) {} ({})",
+                //     i,
+                //     n.weight.transitions,
+                //     solutions_1,
+                //     complexity_1,
+                //     edge1.target().index(),
+                //     second_node.transitions,
+                //     complexity_2,
+                //     solutions_2,
+                //     edge2.target().index(),
+                //     third_node.transitions
+                // );
+                (i, (solutions_2, complexity_2))
+            })
+            .min_by_key(|(_, w)| *w)
+            .unwrap()
+            .0
+    }
+}
+
+pub fn optimize_component_by_weighted_topology_with_tricost_root<C, L>(
+    spec: &[Constraint<C>],
+) -> Permutation
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let conflict_map = squished_map(spec);
+    let root = find_root_by_tricost(&conflict_map);
+
+    order_by_min_front(&conflict_map, root)
+}

@@ -17,7 +17,7 @@ use std::ops::BitOr;
 use std::path::Path;
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, StructArray, UInt64Array, UInt8Array};
+use arrow::array::{ArrayRef, StructArray, UInt32Array, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
@@ -40,6 +40,7 @@ use ccsl::lccsl::constraints::{
     Subclocking, Union,
 };
 use ccsl::lccsl::vizualization::unfold_specification;
+use std::convert::TryInto;
 
 pub fn write_graph<N: Display, E: Display, D: EdgeType>(
     g: &Graph<N, E, D>,
@@ -102,17 +103,10 @@ pub struct SpecCombParams {
     pub real: Criteria,
     pub limit: Criteria,
     pub approx: Criteria,
+    pub clocks: usize,
 }
 
 impl SpecCombParams {
-    pub fn into_array(self) -> [u64; 12] {
-        let local = [self.spec, self.variant, self.comb];
-        let real = self.real.into_array();
-        let limit = self.limit.into_array();
-        let approx = self.approx.into_array();
-        concat_arrays!(local, real, limit, approx)
-    }
-
     pub fn schema() -> Schema {
         let criteria_type = Criteria::arrow_type();
         Schema::new(vec![
@@ -123,6 +117,7 @@ impl SpecCombParams {
             Field::new("real", criteria_type.clone(), false),
             Field::new("limit", criteria_type.clone(), false),
             Field::new("approx", criteria_type, false),
+            Field::new("clocks", DataType::UInt32, false),
         ])
     }
 
@@ -135,29 +130,31 @@ impl SpecCombParams {
         let mut var_vec = Vec::with_capacity(size);
         let mut comb_vec = Vec::with_capacity(size);
         let mut size_vec = Vec::with_capacity(size);
-        let mut real_test_vec = Vec::with_capacity(size);
-        let mut limit_test_vec = Vec::with_capacity(size);
-        let mut approx_test_vec = Vec::with_capacity(size);
-        let mut real_down_vec = Vec::with_capacity(size);
-        let mut limit_down_vec = Vec::with_capacity(size);
-        let mut approx_down_vec = Vec::with_capacity(size);
-        let mut real_solution_vec = Vec::with_capacity(size);
-        let mut limit_solution_vec = Vec::with_capacity(size);
-        let mut approx_solution_vec = Vec::with_capacity(size);
+        let mut real_test_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut limit_test_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut approx_test_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut real_down_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut limit_down_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut approx_down_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut real_solution_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut limit_solution_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut approx_solution_vec: Vec<u64> = Vec::with_capacity(size);
+        let mut clocks_vec: Vec<u32> = Vec::with_capacity(size);
         for e in data {
-            spec_vec.push(e.spec as u64);
-            var_vec.push(e.variant as u64);
-            comb_vec.push(e.comb as u64);
+            spec_vec.push(e.spec);
+            var_vec.push(e.variant);
+            comb_vec.push(e.comb);
             size_vec.push(e.size);
-            real_test_vec.push(e.real.test as u64);
-            real_down_vec.push(e.real.down as u64);
-            real_solution_vec.push(e.real.solutions as u64);
-            limit_test_vec.push(e.limit.test as u64);
-            limit_down_vec.push(e.limit.down as u64);
-            limit_solution_vec.push(e.limit.solutions as u64);
-            approx_test_vec.push(e.approx.test as u64);
-            approx_down_vec.push(e.approx.down as u64);
-            approx_solution_vec.push(e.approx.solutions as u64);
+            real_test_vec.push(e.real.test.try_into().unwrap());
+            real_down_vec.push(e.real.down.try_into().unwrap());
+            real_solution_vec.push(e.real.solutions.try_into().unwrap());
+            limit_test_vec.push(e.limit.test.try_into().unwrap());
+            limit_down_vec.push(e.limit.down.try_into().unwrap());
+            limit_solution_vec.push(e.limit.solutions.try_into().unwrap());
+            approx_test_vec.push(e.approx.test.try_into().unwrap());
+            approx_down_vec.push(e.approx.down.try_into().unwrap());
+            approx_solution_vec.push(e.approx.solutions.try_into().unwrap());
+            clocks_vec.push(e.clocks.try_into().unwrap());
         }
 
         let spec_vec = Arc::new(UInt64Array::from(spec_vec));
@@ -174,6 +171,7 @@ impl SpecCombParams {
         let real_solution_vec: ArrayRef = Arc::new(UInt64Array::from(real_solution_vec));
         let limit_solution_vec: ArrayRef = Arc::new(UInt64Array::from(limit_solution_vec));
         let approx_solution_vec: ArrayRef = Arc::new(UInt64Array::from(approx_solution_vec));
+        let clocks_vec: ArrayRef = Arc::new(UInt32Array::from(clocks_vec));
 
         let [test_f, down_f, solution_f] = Criteria::arrow_fields();
         let real = Arc::new(StructArray::from(vec![
@@ -198,7 +196,9 @@ impl SpecCombParams {
 
         let result = RecordBatch::try_new(
             schema,
-            vec![spec_vec, var_vec, comb_vec, size_vec, real, limit, approx],
+            vec![
+                spec_vec, var_vec, comb_vec, size_vec, real, limit, approx, clocks_vec,
+            ],
         )?;
         Ok(result)
     }
@@ -345,10 +345,11 @@ where
             solutions: limit.solutions,
         },
         approx: Criteria {
-            test: approx.tests.to_usize().unwrap_or_default(),
-            down: approx.downs.to_usize().unwrap_or_default(),
-            solutions: approx.solutions.to_usize().unwrap_or_default(),
+            test: approx.tests.to_usize().unwrap(),
+            down: approx.downs.to_usize().unwrap(),
+            solutions: approx.solutions.to_usize().unwrap(),
         },
+        clocks: spec.iter().flat_map(|c| c.clocks().iter()).unique().count(),
     }
 }
 

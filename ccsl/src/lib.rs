@@ -3,6 +3,7 @@ extern crate pest;
 extern crate pest_derive;
 extern crate derive_more;
 extern crate itertools;
+extern crate nalgebra as na;
 extern crate num;
 extern crate permutation;
 extern crate rand;

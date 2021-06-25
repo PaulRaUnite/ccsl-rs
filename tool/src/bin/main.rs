@@ -24,7 +24,11 @@ use ccsl::lccsl::gen::{
     circle_spec, random_connected_specification, star, to_precedence_spec, to_subclocking_spec,
     TreeIterator,
 };
-use ccsl::lccsl::opti::optimize_component_by_tree_depth;
+use ccsl::lccsl::opti::{
+    optimize_component_by_tree_depth, optimize_component_by_weighted_topology,
+    optimize_component_by_weighted_topology_with_networkx,
+    optimize_component_by_weighted_topology_with_tricost_root,
+};
 use tool::{
     analyze_specification, analyze_specification_combination, analyze_squish_specification,
     gen_spec, gen_spec_flat, inverse_graph, vec_into_vec, SpecCombParams, SquishedParams,
@@ -95,10 +99,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     let mut rng = rand::rngs::StdRng::from_entropy();
     let mut specs = Vec::new();
-    for size in 3..=7 {
-        for _ in 0..(100 - 10 * size) {
+    for size in 3..=6 {
+        for _ in 0..(800 - 100 * size) {
             let seed = rng.next_u64();
-            specs.push((seed, random_connected_specification(seed, size, false)));
+            specs.push((seed, random_connected_specification(seed, size, true)));
         }
     }
     analyse_specs(&data_dir.join("random"), specs)?;
@@ -192,16 +196,10 @@ where
         in_buffer.extend(chunk);
         out_buffer.clear();
         out_buffer.par_extend(in_buffer.iter().par_bridge().flat_map(|(spec, spec_id)| {
-            let opti_spec_perm = optimize_component_by_tree_depth::<u32, L>(spec);
+            let opti_spec_perm = optimize_component_by_weighted_topology::<u32, L>(spec);
             let opti_spec = opti_spec_perm.apply_slice(spec.as_slice());
             let perm_id = lehmer::Lehmer::from_permutation(
-                &opti_spec_perm.apply_slice(
-                    (0..spec.len())
-                        .into_iter()
-                        .map(|i| i as u8)
-                        .collect_vec()
-                        .as_slice(),
-                ),
+                &opti_spec_perm.apply_slice((0..spec.len() as u8).collect_vec().as_slice()),
             )
             .to_decimal() as u64;
             let opti_spec: Vec<STS<u32, L>> = vec_into_vec(&opti_spec);

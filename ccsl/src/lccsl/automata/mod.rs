@@ -620,9 +620,8 @@ impl Debug for StaticBitmapLabel {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SB {:#010b} < {:#010b}",
-            self.clocks.as_value(),
-            self.selection.as_value()
+            "({})",
+            (self.clocks & self.selection).into_iter().join(".")
         )
     }
 }
@@ -632,6 +631,7 @@ impl Label<u32> for StaticBitmapLabel {
         !((self.clocks & rhs.clocks) & (self.selection ^ rhs.selection)).is_empty()
     }
 }
+
 impl FromIterator<(u32, bool)> for StaticBitmapLabel {
     fn from_iter<T: IntoIterator<Item = (u32, bool)>>(iter: T) -> Self {
         let mut clocks = Bitmap::new();
