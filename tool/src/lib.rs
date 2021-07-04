@@ -338,9 +338,9 @@ where
             solutions: limit.solutions,
         },
         approx: Criteria {
-            test: approx.tests.to_usize().unwrap(),
-            down: approx.downs.to_usize().unwrap(),
-            solutions: approx.solutions.to_usize().unwrap(),
+            test: approx.tests,
+            down: approx.downs,
+            solutions: approx.solutions,
         },
         clocks: spec.iter().flat_map(|c| c.clocks().iter()).unique().count(),
     }
@@ -373,9 +373,9 @@ where
             solutions: limit.solutions,
         },
         approx: Criteria {
-            test: approx.tests.to_usize().unwrap(),
-            down: approx.downs.to_usize().unwrap(),
-            solutions: approx.solutions.to_usize().unwrap(),
+            test: approx.tests,
+            down: approx.downs,
+            solutions: approx.solutions,
         },
     }
 }
@@ -405,6 +405,7 @@ where
     )
 }
 
+#[macro_export]
 macro_rules! collection {
     // map-like
     ($($k:expr => $v:expr),* $(,)?) => {

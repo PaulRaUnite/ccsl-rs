@@ -446,7 +446,7 @@ pub fn random_connected_specification(
 ) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(size);
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    let clock_size = 2 * size;
+    let clock_size = 3 * size;
     let mut known_clocks = BTreeSet::new();
     known_clocks.insert(0);
 
@@ -572,6 +572,7 @@ pub fn random_connected_specification(
         };
         spec.push(c);
     }
+    spec.shuffle(&mut rng);
     spec
 }
 

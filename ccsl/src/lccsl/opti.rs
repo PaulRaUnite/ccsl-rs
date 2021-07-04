@@ -63,7 +63,10 @@ fn weights_from_min_outgoing(
 pub fn root_by_min_outgoing(
     conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
 ) -> usize {
-    find_root(&weights_from_min_outgoing(conflict_map))
+    weights_from_min_outgoing(conflict_map)
+        .iter()
+        .position_min()
+        .unwrap()
 }
 
 fn get_components<N, E>(g: &UnGraph<N, E>) -> impl Iterator<Item = Vec<usize>> {
@@ -168,16 +171,7 @@ where
     let map = squished_conflict_map(spec);
     let root_idx = root_by_min_outgoing(&map);
 
-    let map = unidirect_squished_map(spec);
-
-    let tree: UnGraph<_, _> = Graph::from_elements(min_spanning_tree(&map));
-    let mut dfs = Dfs::new(&tree, NodeIndex::new(root_idx));
-    let mut perm = Vec::with_capacity(spec.len());
-    while let Some(nx) = dfs.next(&tree) {
-        perm.push(nx.index());
-    }
-    assert_eq!(perm.len(), spec.len(), "{:?} {:?}", &perm, &tree);
-    Permutation::from_vec(perm)
+    optimize_component_by_tree_depth_by_root(spec, root_idx)
 }
 
 pub fn optimize_component_by_tree_depth_by_root<C, L>(
@@ -200,10 +194,6 @@ where
     }
     assert_eq!(perm.len(), spec.len(), "{:?} {:?}", &perm, &tree);
     Permutation::from_vec(perm)
-}
-
-fn find_root<T: Ord>(weights: &Vec<T>) -> usize {
-    weights.iter().position_min().unwrap()
 }
 
 pub fn optimize_by_min_front_init_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
@@ -234,7 +224,7 @@ where
     order_by_min_front(&conflict_map, root)
 }
 
-fn order_via_dijkstra(
+pub fn order_via_dijkstra(
     conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
     root_idx: usize,
 ) -> Permutation {
@@ -251,7 +241,7 @@ fn order_via_dijkstra(
     )
 }
 
-fn order_by_min_front(
+pub fn order_by_min_front(
     conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
     root_idx: usize,
 ) -> Permutation {
@@ -280,7 +270,7 @@ fn order_by_min_front(
         temp.extend(edges.iter().filter(|(_, t, _)| t != &next).copied());
         swap(&mut edges, &mut temp);
         perm.push(next);
-        visited.insert(root_idx);
+        visited.insert(next);
     }
     Permutation::from_vec(perm)
 }
@@ -314,7 +304,7 @@ where
     order_via_dijkstra(&conflict_map, root_idx)
 }
 
-fn networkx_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+pub fn networkx_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
     let mut proc = Command::new("bash")
         .arg("/home/paulra/Code/ccsl-rs/rooter/run.sh")
         .stdin(Stdio::piped())
@@ -352,7 +342,7 @@ fn networkx_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize
     root
 }
 
-fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+pub fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
     let n = conflict_map.node_count();
     let weights = DVector::from_vec(
         conflict_map
@@ -405,7 +395,9 @@ where
 //     0
 // }
 //
-fn root_by_tricost(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
+pub fn root_by_tricost(
+    conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
+) -> usize {
     if conflict_map.node_count() <= 2 {
         0
     } else {
@@ -493,9 +485,9 @@ pub mod root {
     use num::Zero;
     use petgraph::prelude::EdgeRef;
     use petgraph::{Direction, Graph};
-    use rand::{Rng, SeedableRng};
 
     use crate::lccsl::algo::{ConflictEffect, ConflictSource};
+    use rand::{Rng, SeedableRng};
 
     pub fn weights_with_init(
         conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,

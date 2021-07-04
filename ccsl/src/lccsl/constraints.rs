@@ -379,7 +379,7 @@ where
 {
     fn from(c: &Causality<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
-            todo!();
+            //TODO: causality max-init
         }
         let mut system: STSBuilder<C> = (&Precedence {
             left: c.left.clone(),
@@ -400,7 +400,7 @@ where
 {
     fn from(c: &Precedence<C>) -> Self {
         if c.init.is_some() || c.max.is_some() {
-            todo!();
+            //TODO: precedence max-init
         }
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
 
@@ -442,11 +442,11 @@ where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: &Subclocking<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
+        let var = IntegerExpression::var(Delta(c.right.clone(), c.left.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
         let mut system = STSBuilder::new(&c, start.clone());
 
-        tr!(system, &start => &start, {c.left,});
+        tr!(system, &start => &start, {c.right,});
         tr!(system, &start => &start, {c.left, c.right,});
         tr!(system, &start => &start, {});
         system
@@ -598,19 +598,31 @@ impl<C: fmt::Display> fmt::Display for Alternates<C> {
 
 impl<C: fmt::Display> fmt::Display for Causality<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.init.is_some() || self.max.is_some() {
-            todo!();
+        match (self.init, self.max) {
+            (Some(init), Some(max)) => write!(
+                f,
+                "{} <= (init: {}, max: {}) {}",
+                self.left, init, max, self.right
+            ),
+            (Some(init), None) => write!(f, "{} <= (init: {}) {}", self.left, init, self.right),
+            (None, Some(max)) => write!(f, "{} <= (max: {}) {}", self.left, max, self.right),
+            (None, None) => write!(f, "{} <= {}", self.left, self.right),
         }
-        write!(f, "{} <= {}", self.left, self.right)
     }
 }
 
 impl<C: fmt::Display> fmt::Display for Precedence<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.init.is_some() || self.max.is_some() {
-            todo!();
+        match (self.init, self.max) {
+            (Some(init), Some(max)) => write!(
+                f,
+                "{} < (init: {}, max: {}) {}",
+                self.left, init, max, self.right
+            ),
+            (Some(init), None) => write!(f, "{} < (init: {}) {}", self.left, init, self.right),
+            (None, Some(max)) => write!(f, "{} < (max: {}) {}", self.left, max, self.right),
+            (None, None) => write!(f, "{} < {}", self.left, self.right),
         }
-        write!(f, "{} < {}", self.left, self.right)
     }
 }
 

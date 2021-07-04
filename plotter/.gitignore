@@ -1,8 +1,2 @@
 venv
-data.csv
-squished.csv
-optimized.csv
-
-data.parquet
-squished.parquet
-optimized.parquet
+data

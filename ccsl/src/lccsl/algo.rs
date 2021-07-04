@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::ops::BitOr;
+use std::ops::{BitOr, Mul};
 
 use itertools::Itertools;
 use num::rational::Ratio;
@@ -12,6 +12,7 @@ use petgraph::{Direction, Graph};
 
 use crate::lccsl::automata::{Label, MergedTransition, STSBuilder, StateRef, STS};
 use crate::lccsl::constraints::Constraint;
+use num::{Integer, ToPrimitive};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ConflictEffect<R> {
@@ -47,7 +48,6 @@ impl fmt::Display for ConflictSource {
         write!(f, "{} ({})", self.name, self.transitions)
     }
 }
-
 pub fn approx_conflict_map<C, L>(
     spec: &[STS<C, L>],
     comb: &[StateRef],
@@ -103,6 +103,9 @@ where
         })
         .collect();
     for ((i1, c1), (i2, c2)) in spec.iter().enumerate().tuple_combinations::<(_, _)>() {
+        if c1.clocks().intersection(c2.clocks()).next().is_none() {
+            continue;
+        }
         let n1 = nodes[i1];
         let n2 = nodes[i2];
         let (direct, backwards) = edger(c1, c2, comb[i1], comb[i2]);
@@ -327,45 +330,64 @@ where
 }
 
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Complexity<R> {
-    pub solutions: R,
+pub struct Complexity {
+    pub solutions: usize,
     pub all: usize,
-    pub downs: R,
-    pub tests: R,
+    pub downs: usize,
+    pub tests: usize,
 }
 
-impl<R: fmt::Debug> fmt::Display for Complexity<R> {
+impl fmt::Display for Complexity {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-pub fn complexity_from_graph<R>(g: &Graph<ConflictSource, ConflictEffect<R>>) -> Complexity<R>
+pub trait Ceil {
+    fn ceil(&self) -> Self;
+}
+
+impl<T: Clone + Integer> Ceil for Ratio<T> {
+    fn ceil(&self) -> Self {
+        Ratio::ceil(self)
+    }
+}
+
+impl Ceil for usize {
+    fn ceil(&self) -> Self {
+        *self
+    }
+}
+
+pub fn complexity_from_graph<R>(g: &Graph<ConflictSource, ConflictEffect<R>>) -> Complexity
 where
-    R: num::Num + Copy + Clone + From<usize> + Ord,
+    R: num::Num + Copy + Clone + From<usize> + Ord + Mul<usize, Output = R> + ToPrimitive + Ceil,
 {
     if g.node_count() == 0 {
-        return Complexity::<R> {
-            solutions: R::zero(),
+        return Complexity {
+            solutions: 0,
             all: 0,
-            downs: R::zero(),
-            tests: R::zero(),
+            downs: 0,
+            tests: 0,
         };
     }
     let mut selected: HashSet<_> = HashSet::new();
-    let mut aprox = Complexity::<R> {
-        solutions: R::one(),
+    let mut aprox = Complexity {
+        solutions: 1,
         all: 1,
-        downs: R::zero(),
-        tests: R::zero(),
+        downs: 0,
+        tests: 0,
     };
     for to in g.node_indices() {
-        let (solution, all): (R, usize) = g
+        let (solution, all): (usize, usize) = g
             .edges_directed(to, Direction::Incoming)
             .filter_map(|e| {
                 if selected.contains(&e.source()) {
                     Some((
-                        aprox.solutions * e.weight().solutions,
+                        (e.weight().solutions.clone() * aprox.solutions)
+                            .ceil()
+                            .to_usize()
+                            .unwrap(),
                         aprox.all * e.weight().all,
                     ))
                 } else {
@@ -375,11 +397,11 @@ where
             .min_by_key(|(s, _)| *s)
             .unwrap_or_else(|| {
                 let t = g.node_weight(to).unwrap().transitions;
-                (aprox.solutions * t.into(), aprox.all * t)
+                (aprox.solutions * t, aprox.all * t)
             });
         selected.insert(to);
         aprox.downs = aprox.downs + solution;
-        aprox.tests = aprox.tests + aprox.solutions * g.node_weight(to).unwrap().transitions.into();
+        aprox.tests = aprox.tests + aprox.solutions * g.node_weight(to).unwrap().transitions;
         aprox.solutions = solution;
         aprox.all = all;
     }
@@ -446,4 +468,32 @@ where
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
     let conflict_map = approx_conflict_map(&squished_spec, &comb);
     conflict_map
+}
+
+pub fn squished_limit_map<C, L>(
+    spec: &[Constraint<C>],
+) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash,
+    L: Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    let squished_spec: Vec<STS<C, L>> = spec
+        .iter()
+        .map(|c| {
+            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
+                .squish()
+                .into()
+        })
+        .collect_vec();
+    let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
+    let conflict_map = limit_conflict_map(&squished_spec, &comb);
+    conflict_map.map(
+        |_, n| n.clone(),
+        |_, e| ConflictEffect {
+            solutions: e.solutions.into(),
+            all: e.all,
+        },
+    )
 }
