@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 ccsl={path="../ccsl"}
 structopt = "0.3"
-petgraph = "0.5"
+petgraph = "0.6"
 itertools = "0.10"
 serde = { version = "1", features = ["derive"] }
 csv = "1.1"
@@ -17,7 +17,7 @@ num = "0.4"
 rayon = "1.5"
 parquet = "4.1"
 arrow = "4.1"
-lehmer = "3.0.0"
-rand = "0.8.3"
-permutation = "0.2.5"
+lehmer = "3"
+rand = "0.8"
+permutation = "0.2"
 

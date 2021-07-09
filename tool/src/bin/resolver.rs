@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dir = Path::new("/home/paulra/Code/ccsl-rs/tool/dot/resolver/");
 
-    let spec = random_connected_specification(spec_id, size, false)
+    let spec = random_connected_specification(spec_id, size, true)
         .into_iter()
         .map(|c| c.map(&mut |clock| *clock as u32))
         .collect_vec();

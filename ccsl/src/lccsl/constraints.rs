@@ -246,7 +246,7 @@ impl<C> Delay<C> {
 pub struct SampleOn<C> {
     pub out: C,
     pub base: C,
-    pub on: Option<C>,
+    pub on: C,
 }
 
 impl<C> SampleOn<C> {
@@ -257,7 +257,7 @@ impl<C> SampleOn<C> {
         SampleOn {
             out: f(&self.out),
             base: f(&self.base),
-            on: self.on.as_ref().map(f),
+            on: f(&self.on),
         }
     }
 }
@@ -316,6 +316,8 @@ pub enum Constraint<C> {
     Minus(Minus<C>),
     Repeat(Repeat<C>),
     Delay(Delay<C>),
+    SampleOn(SampleOn<C>),
+    Diff(Diff<C>),
 }
 
 impl<C> From<&'_ Constraint<C>> for STSBuilder<C>
@@ -335,6 +337,8 @@ where
             Constraint::Minus(c) => c.into(),
             Constraint::Repeat(c) => c.into(),
             Constraint::Delay(c) => c.into(),
+            Constraint::SampleOn(c) => c.into(),
+            Constraint::Diff(c) => c.into()
         }
     }
 }
@@ -689,6 +693,8 @@ impl<C> Constraint<C> {
             Constraint::Minus(c) => c.map(f).into(),
             Constraint::Repeat(c) => c.map(f).into(),
             Constraint::Delay(c) => c.map(f).into(),
+            Constraint::SampleOn(c) => c.map(f).into(),
+            Constraint::Diff(c) => c.map(f).into(),
         }
     }
 
@@ -706,6 +712,8 @@ impl<C> Constraint<C> {
             Constraint::Minus(_) => 2,
             Constraint::Repeat(_) => 5,
             Constraint::Delay(_) => 0,
+            Constraint::SampleOn(_) => 1,
+            Constraint::Diff(_) => 1,
         }
     }
 
@@ -727,6 +735,8 @@ impl<C> Constraint<C> {
                     .chain(once(&c.base))
                     .collect_vec()
             }
+            Constraint::SampleOn(c) => vec![&c.out, &c.base, &c.on],
+            Constraint::Diff(c) => vec![&c.out, &c.base],
         }
     }
 
@@ -762,6 +772,8 @@ impl<C> Constraint<C> {
                 c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
             ),
             Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
+            Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.base, c.on),
+            Constraint::Diff(c) => format!("{} = {} [{}, {}]", c.out, c.base, c.from, c.up_to),
         }
     }
 }

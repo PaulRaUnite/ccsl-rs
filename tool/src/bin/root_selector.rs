@@ -21,7 +21,7 @@ type L = StaticBitmapLabel;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
-    let spec = random_connected_specification(opt.spec, opt.size, false)
+    let spec = random_connected_specification(opt.spec, opt.size, true)
         .into_iter()
         .map(|c| c.map(&mut |clock| *clock as u32))
         .collect_vec();

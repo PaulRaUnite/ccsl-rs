@@ -8,6 +8,8 @@ extern crate num;
 extern crate permutation;
 extern crate rand;
 extern crate thiserror;
+#[macro_use]
+extern crate lazy_static;
 
 pub mod lccsl {
     pub mod constraints;
