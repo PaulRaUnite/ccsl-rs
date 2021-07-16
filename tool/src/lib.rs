@@ -19,7 +19,6 @@ use arrow::array::{ArrayRef, StructArray, UInt32Array, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
-use num::ToPrimitive;
 use permutation::Permutation;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;
@@ -34,8 +33,8 @@ use ccsl::lccsl::algo::{
 };
 use ccsl::lccsl::automata::{ClockLabelClassic, Label, STSBuilder, StateRef, STS};
 use ccsl::lccsl::constraints::{
-    Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Intersection, Precedence,
-    Subclocking, Union,
+    Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Infinity, Intersection,
+    Precedence, Repeat, SampleOn, Subclocking, Supremum, Union,
 };
 use ccsl::lccsl::vizualization::unfold_specification;
 use parquet::arrow::ArrowWriter;
@@ -456,6 +455,46 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
         .into(),
     ));
     map.push((
+        "causality_bounded",
+        Into::<STSBuilder<_>>::into(&Causality {
+            left: "a",
+            right: "b",
+            init: Some(2),
+            max: Some(4),
+        })
+        .into(),
+    ));
+    map.push((
+        "precedence_bounded",
+        Into::<STSBuilder<_>>::into(&Precedence {
+            left: "a",
+            right: "b",
+            init: Some(2),
+            max: Some(4),
+        })
+        .into(),
+    ));
+    map.push((
+        "causality_max",
+        Into::<STSBuilder<_>>::into(&Causality {
+            left: "a",
+            right: "b",
+            init: None,
+            max: Some(4),
+        })
+        .into(),
+    ));
+    map.push((
+        "precedence_max",
+        Into::<STSBuilder<_>>::into(&Precedence {
+            left: "a",
+            right: "b",
+            init: None,
+            max: Some(4),
+        })
+        .into(),
+    ));
+    map.push((
         "exclusion",
         Into::<STSBuilder<_>>::into(&Exclusion {
             clocks: collection!("a", "b"),
@@ -493,6 +532,44 @@ pub fn all_constraints(dir: &Path) -> Result<(), Box<dyn Error>> {
             base: "a",
             delay: 2,
             on: None,
+        })
+        .into(),
+    ));
+    map.push((
+        "inf",
+        Into::<STSBuilder<_>>::into(&Infinity {
+            out: "i",
+            left: "a",
+            right: "b",
+        })
+        .into(),
+    ));
+    map.push((
+        "sup",
+        Into::<STSBuilder<_>>::into(&Supremum {
+            out: "s",
+            left: "a",
+            right: "b",
+        })
+        .into(),
+    ));
+    map.push((
+        "sampledOn",
+        Into::<STSBuilder<_>>::into(&SampleOn {
+            out: "out",
+            trigger: "t",
+            base: "b",
+        })
+        .into(),
+    ));
+    map.push((
+        "repeat",
+        Into::<STSBuilder<_>>::into(&Repeat {
+            out: "out",
+            base: "b",
+            from: Some(2),
+            every: 3,
+            up_to: None,
         })
         .into(),
     ));

@@ -39,6 +39,8 @@ pub enum ParseError {
     #[error("unknown error")]
     Unknown,
 }
+// TODO: parse into a specialized AST/enum, not directly into constrains,
+//  for reasons of encoding/decoding roundtrip
 
 fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
@@ -155,7 +157,7 @@ fn parse_clocks<'a>(input: Pair<'a, Rule>) -> impl Iterator<Item = ID> + 'a {
 }
 
 fn parse_repeat(input: Pair<Rule>) -> Constraint<ID> {
-    let mut every = None;
+    let mut every = 1;
     let mut clocks: Vec<ID> = Vec::with_capacity(2);
     let mut from = None;
     let mut up_to = None;
@@ -163,7 +165,7 @@ fn parse_repeat(input: Pair<Rule>) -> Constraint<ID> {
     for field in input.into_inner() {
         match field.as_rule() {
             Rule::id => clocks.push(field.as_str().to_string().into()),
-            Rule::int => every = Some(field.as_str().parse::<usize>().unwrap()),
+            Rule::int => every = field.as_str().parse::<usize>().unwrap_or(1),
             Rule::from => from = Some(field.into_inner().as_str().parse::<usize>().unwrap()),
             Rule::up_to => up_to = Some(field.into_inner().as_str().parse::<usize>().unwrap()),
             _ => unreachable!(),
@@ -336,8 +338,8 @@ fn parse_expression(
                 .into(),
                 Rule::minus => Minus {
                     out: out.clone(),
-                    base: lhs,
-                    args: BTreeSet::from_iter([rhs]),
+                    left: lhs,
+                    right: rhs,
                 }
                 .into(),
                 _ => unreachable!(),
@@ -355,41 +357,53 @@ fn parse_prefix_expression(
     gen: &RefCell<RangeFrom<usize>>,
     container: &mut Vec<Constraint<ID>>,
 ) -> ID {
-    let out: ID = gen.borrow_mut().next().unwrap().into();
     let mut inner = input.into_inner();
     let sup = inner.next().unwrap().as_str() == "sup";
-    let args = inner.map(|c| c.as_str().to_string().into()).collect();
+    let args = inner.map(|c| c.as_str().to_string().into()).collect_vec();
     if sup {
-        container.push(
-            Supremum {
-                out: out.clone(),
-                args,
-            }
-            .into(),
-        );
+        args.into_iter()
+            .reduce(|left, right| {
+                let out: ID = gen.borrow_mut().next().unwrap().into();
+                container.push(
+                    Supremum {
+                        out: out.clone(),
+                        left,
+                        right,
+                    }
+                    .into(),
+                );
+                out
+            })
+            .unwrap()
     } else {
-        container.push(
-            Infinity {
-                out: out.clone(),
-                args,
-            }
-            .into(),
-        );
+        args.into_iter()
+            .reduce(|left, right| {
+                let out: ID = gen.borrow_mut().next().unwrap().into();
+                container.push(
+                    Infinity {
+                        out: out.clone(),
+                        left,
+                        right,
+                    }
+                    .into(),
+                );
+                out
+            })
+            .unwrap()
     }
-    out
 }
 
 fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
     let mut inner = input.into_inner();
     let out: ID = inner.next().unwrap().as_str().to_string().into();
-    let base: ID = inner.next().unwrap().as_str().to_string().into();
+    let first: ID = inner.next().unwrap().as_str().to_string().into();
     let field = inner.next().unwrap();
     match field.as_rule() {
         Rule::delay => {
             let mut inner = field.into_inner();
             Delay {
                 out,
-                base,
+                base: first,
                 delay: inner.next().unwrap().as_str().parse::<usize>().unwrap(),
                 on: inner.next().map(|v| v.as_str().to_string().into()),
             }
@@ -397,8 +411,8 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
         }
         Rule::sampleOn => SampleOn {
             out,
-            base,
-            on: field
+            trigger: first,
+            base: field
                 .into_inner()
                 .next()
                 .unwrap()
@@ -411,7 +425,7 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
             let mut inner = field.into_inner();
             Diff {
                 out,
-                base,
+                base: first,
                 from: inner.next().unwrap().as_str().parse().unwrap(),
                 up_to: inner.next().unwrap().as_str().parse().unwrap(),
             }
@@ -463,7 +477,7 @@ mod tests {
             Let out be m and t
             ]
         }";
-        // FIXME: what the point of clocks definition?? There is discrepancy between clocks
+        // FIXME: Clocks are not processed as should so there is a discrepancy after encoding
         let spec_const = parse_to_string(spec).expect("should parse");
         let spec = to_lccsl(&spec_const.constraints, &spec_const.name);
         let spec_const = parse_to_string(&spec).expect("should parse");

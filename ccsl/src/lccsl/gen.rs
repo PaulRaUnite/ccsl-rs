@@ -374,17 +374,17 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
             3 => Exclusion { clocks: all }.into(),
             4 => Union { out, args: others }.into(),
             5 => Intersection { out, args: others }.into(),
-            6 => Infinity { out, args: others }.into(),
-            7 => Supremum { out, args: others }.into(),
+            6 => Infinity { out, left, right }.into(),
+            7 => Supremum { out, left, right }.into(),
             8 => Minus {
                 out,
-                base: rng.gen_range(0..clock_size),
-                args: others,
+                left: rng.gen_range(0..clock_size),
+                right: rng.gen_range(0..clock_size),
             }
             .into(),
             9 => Repeat {
                 out,
-                every: Some(rng.gen_range(0..clock_size)),
+                every: rng.gen_range(0..clock_size),
                 base: rng.gen_range(0..clock_size),
                 from: Some(rng.gen_range(0..clock_size)),
                 up_to: None,
@@ -517,29 +517,27 @@ pub fn random_connected_specification(
             }
             6 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
-                Infinity { out, args: others }.into()
+                let (left, right) = others.into_iter().collect_tuple().unwrap();
+                Infinity { out, left, right }.into()
             }
             7 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
-                Supremum { out, args: others }.into()
+                let (left, right) = others.into_iter().collect_tuple().unwrap();
+                Supremum { out, left, right }.into()
             }
             8 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
+                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
-                Minus {
-                    out,
-                    base: rng.gen_range(0..clock_size),
-                    args: others,
-                }
-                .into()
+                let (left, right) = others.into_iter().collect_tuple().unwrap();
+                Minus { out, left, right }.into()
             }
             9 => {
                 let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
@@ -547,7 +545,7 @@ pub fn random_connected_specification(
                 known_clocks.insert(right);
                 Repeat {
                     out: left,
-                    every: Some(rng.gen_range(0..clock_size)),
+                    every: rng.gen_range(0..clock_size),
                     base: right,
                     from: Some(rng.gen_range(0..clock_size)),
                     up_to: None,

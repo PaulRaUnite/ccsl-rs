@@ -28,8 +28,8 @@ union      = { "+" | "or" }
 intersection = { "*" | "and" }
 minus = { "-" | "minus" }
 
-expression = { term ~ (operation ~ term)* }
-term = _{ id | prefix_expr | "(" ~ expression ~ ")" }
+expression = {term ~ (operation ~ term)* }
+term = _{ prefix_expr | "(" ~ expression ~ ")" | id  }
 
 int = @{ "-"? ~ ASCII_DIGIT+ }
 id = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-")* }

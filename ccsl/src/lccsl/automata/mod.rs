@@ -287,6 +287,10 @@ where
         }
     }
 
+    pub fn set_name(&mut self, name: impl ToString) {
+        self.name = name.to_string();
+    }
+
     pub fn initial(&self) -> &State<C> {
         &self.initial_state
     }

@@ -11,6 +11,7 @@ use itertools::Itertools;
 use crate::lccsl::automata::{Delta, Label, STSBuilder, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
+use std::cmp::max;
 use std::ops::BitOr;
 
 #[derive(Debug, Copy, Clone, Hash)]
@@ -141,10 +142,11 @@ impl<C> Intersection<C> {
     }
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Infinity<C> {
     pub out: C,
-    pub args: BTreeSet<C>,
+    pub left: C,
+    pub right: C,
 }
 
 impl<C> Infinity<C> {
@@ -155,14 +157,16 @@ impl<C> Infinity<C> {
     {
         Infinity {
             out: f(&self.out),
-            args: self.args.iter().map(f).collect(),
+            left: f(&self.left),
+            right: f(&self.right),
         }
     }
 }
 #[derive(Debug, Clone, Hash)]
 pub struct Supremum<C> {
     pub out: C,
-    pub args: BTreeSet<C>,
+    pub left: C,
+    pub right: C,
 }
 impl<C> Supremum<C> {
     pub(crate) fn map<B, F>(&self, f: &mut F) -> Supremum<B>
@@ -172,7 +176,8 @@ impl<C> Supremum<C> {
     {
         Supremum {
             out: f(&self.out),
-            args: self.args.iter().map(f).collect(),
+            left: f(&self.left),
+            right: f(&self.right),
         }
     }
 }
@@ -180,7 +185,7 @@ impl<C> Supremum<C> {
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Repeat<C> {
     pub out: C,
-    pub every: Option<usize>,
+    pub every: usize,
     pub base: C,
     pub from: Option<usize>,
     pub up_to: Option<usize>,
@@ -200,27 +205,7 @@ impl<C> Repeat<C> {
         }
     }
 }
-#[derive(Debug, Copy, Clone, Hash)]
-pub struct Filter<C> {
-    pub out: C,
-    pub base: C,
-    pub every: usize,
-    pub from: usize,
-}
 
-impl<C> Filter<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Filter<B>
-    where
-        F: FnMut(&C) -> B,
-    {
-        Filter {
-            out: f(&self.out),
-            every: self.every,
-            base: f(&self.base),
-            from: self.from,
-        }
-    }
-}
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Delay<C> {
     pub out: C,
@@ -246,7 +231,7 @@ impl<C> Delay<C> {
 pub struct SampleOn<C> {
     pub out: C,
     pub base: C,
-    pub on: C,
+    pub trigger: C,
 }
 
 impl<C> SampleOn<C> {
@@ -257,7 +242,7 @@ impl<C> SampleOn<C> {
         SampleOn {
             out: f(&self.out),
             base: f(&self.base),
-            on: f(&self.on),
+            trigger: f(&self.trigger),
         }
     }
 }
@@ -282,11 +267,11 @@ impl<C> Diff<C> {
         }
     }
 }
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct Minus<C> {
     pub out: C,
-    pub base: C,
-    pub args: BTreeSet<C>,
+    pub left: C,
+    pub right: C,
 }
 
 impl<C> Minus<C> {
@@ -297,8 +282,8 @@ impl<C> Minus<C> {
     {
         Minus {
             out: f(&self.out),
-            base: f(&self.base),
-            args: self.args.iter().map(f).collect(),
+            left: f(&self.left),
+            right: f(&self.right),
         }
     }
 }
@@ -338,7 +323,7 @@ where
             Constraint::Repeat(c) => c.into(),
             Constraint::Delay(c) => c.into(),
             Constraint::SampleOn(c) => c.into(),
-            Constraint::Diff(c) => c.into()
+            Constraint::Diff(c) => c.into(),
         }
     }
 }
@@ -382,18 +367,16 @@ where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: &Causality<C>) -> Self {
-        if c.init.is_some() || c.max.is_some() {
-            //TODO: causality max-init
-        }
         let mut system: STSBuilder<C> = (&Precedence {
             left: c.left.clone(),
             right: c.right.clone(),
-            init: None,
-            max: None,
+            init: c.init,
+            max: c.max,
         })
             .into();
-        let start = system.initial().clone();
+        let start = State::new(0);
         tr!(system, &start => &start, {c.left, c.right,});
+        system.set_name(&c);
         system
     }
 }
@@ -403,24 +386,43 @@ where
     C: Clone + Ord + Hash + fmt::Display,
 {
     fn from(c: &Precedence<C>) -> Self {
-        if c.init.is_some() || c.max.is_some() {
-            //TODO: precedence max-init
-        }
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
+        if c.init.is_some() && c.max.is_none() {
+            panic!("init should be paired by max");
+        }
+        if let Some(max) = c.max {
+            if max == 0 {
+                panic!("max cannot be zero");
+            }
+            if c.init.unwrap_or(0) > max {
+                panic!("init cannot be bigger than max");
+            }
+        }
+        let init = State::new(c.init.unwrap_or(0));
+        let mut system = STSBuilder::new(&c, init);
+        let last = max(c.init, c.max).unwrap_or(1);
+        let mut prev = State::new(0);
+        tr!(system, &prev => &prev, {!c.left, !c.right,});
+        for i in 1..=(last - 1) {
+            let next = State::new(i);
+            tr!(system, &prev => &next, {c.left, !c.right,});
+            tr!(system, &next => &next, {c.left, c.right,});
+            tr!(system, &next => &next, {!c.left, !c.right,});
+            tr!(system, &next => &prev, {!c.left, c.right,});
+            prev = next;
+        }
+        let last = State::new(last);
+        if c.max.is_none() {
+            tr!(system, &last => &last, {c.left, !c.right,});
+            tr!(system, var.eq(1), &last => &prev, {!c.left, c.right,});
+            tr!(system, var.more(1), &last => &last, {!c.left, c.right,});
+        } else {
+            tr!(system, &last => &prev, {!c.left, c.right,});
+        }
+        tr!(system, &prev => &last, {c.left, !c.right,});
+        tr!(system, &last => &last, {c.left, c.right,});
+        tr!(system, &last => &last, {!c.left, !c.right,});
 
-        let start = State::new(0).with_invariant(var.eq(0));
-        let next = State::new(1).with_invariant(var.more(0));
-        let mut system = STSBuilder::new(&c, start.clone());
-        tr!(system, &start => &next, {c.left, !c.right,});
-
-        tr!(system, &next => &next, {c.left, !c.right,});
-        tr!(system, &next => &next, {c.left, c.right,});
-
-        tr!(system, var.eq(1), &next => &start, {!c.left, c.right,});
-        tr!(system, var.more(1), &next => &next, {!c.left, c.right,});
-
-        tr!(system, &start => &start, {!c.left, !c.right,});
-        tr!(system, &next => &next, {!c.left, !c.right,});
         system
     }
 }
@@ -535,40 +537,152 @@ where
     }
 }
 
-impl<C> From<&'_ Infinity<C>> for STSBuilder<C> {
-    fn from(_: &Infinity<C>) -> Self {
-        todo!()
+impl<C> From<&'_ Infinity<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &Infinity<C>) -> Self {
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
+        let minus = State::new(0);
+        let zero = State::new(1);
+        let plus = State::new(2);
+        let mut system = STSBuilder::new(&c, zero.clone());
+        tr!(system, &zero => &zero, {c.left, c.right, c.out,});
+        tr!(system, &zero => &zero, {});
+        tr!(system, &zero => &plus, {c.left, !c.right, c.out,});
+        tr!(system, &zero => &minus, {!c.left, c.right, c.out,});
+
+        tr!(system, &plus => &plus, {c.left, c.right, c.out,});
+        tr!(system, &plus => &plus, {c.left, !c.right, c.out,});
+        tr!(system, &plus => &plus, {});
+        tr!(system, var.more(1), &plus => &plus, {!c.left, c.right, !c.out,});
+        tr!(system, var.eq(1), &plus => &zero, {!c.left, c.right, !c.out,});
+
+        tr!(system, &minus => &minus, {c.left, c.right, c.out,});
+        tr!(system, &minus => &minus, {!c.left, c.right, c.out,});
+        tr!(system, &minus => &minus, {});
+        tr!(system, var.less(-1), &minus => &minus, {c.left, !c.right, !c.out,});
+        tr!(system, var.eq(-1), &minus => &zero, {c.left, !c.right, !c.out,});
+        system
     }
 }
 
-impl<C> From<&'_ Supremum<C>> for STSBuilder<C> {
-    fn from(_: &Supremum<C>) -> Self {
-        todo!()
+impl<C> From<&'_ Supremum<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &Supremum<C>) -> Self {
+        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
+        let minus = State::new(0);
+        let zero = State::new(1);
+        let plus = State::new(2);
+        let mut system = STSBuilder::new(&c, zero.clone());
+        tr!(system, &zero => &zero, {c.left, c.right, c.out,});
+        tr!(system, &zero => &plus, {c.left, !c.right, !c.out,});
+        tr!(system, &zero => &minus, {!c.left, c.right, !c.out,});
+        tr!(system, &zero => &zero, {});
+        tr!(system, &plus => &plus, {c.left, c.right, !c.out,});
+        tr!(system, &plus => &plus, {c.left, !c.right, !c.out,});
+        tr!(system, var.more(1), &plus => &plus, {!c.left, c.right, c.out,});
+        tr!(system, var.eq(1), &plus => &zero, {!c.left, c.right, c.out,});
+        tr!(system, &plus => &plus, {});
+        tr!(system, &minus => &minus, {c.left, c.right, !c.out,});
+        tr!(system, &minus => &minus, {!c.left, c.right, !c.out,});
+        tr!(system, var.less(-1), &minus => &minus, {c.left, !c.right, c.out,});
+        tr!(system, var.eq(-1), &minus => &zero, {c.left, !c.right, c.out,});
+        tr!(system, &minus => &minus, {});
+        system
     }
 }
-impl<C> From<&'_ Minus<C>> for STSBuilder<C> {
-    fn from(_: &Minus<C>) -> Self {
-        todo!()
+impl<C> From<&'_ Minus<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &Minus<C>) -> Self {
+        let s = State::new(0);
+        let mut system = STSBuilder::new(&c, s.clone());
+        tr!(system, &s => &s, {c.out, c.left, !c.right,});
+        tr!(system, &s => &s, {!c.out, c.left, c.right,});
+        tr!(system, &s => &s, {!c.out, !c.left, c.right,});
+        tr!(system, &s => &s, {});
+        system
     }
 }
-impl<C> From<&'_ Diff<C>> for STSBuilder<C> {
-    fn from(_: &Diff<C>) -> Self {
-        todo!()
+impl<C> From<&'_ Diff<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &Diff<C>) -> Self {
+        let mut sts: STSBuilder<C> = (&Repeat {
+            out: c.out.clone(),
+            every: 1,
+            base: c.base.clone(),
+            from: Some(c.from),
+            up_to: Some(c.up_to),
+        })
+            .into();
+        sts.set_name(c.to_string());
+        sts
     }
 }
-impl<C> From<&'_ SampleOn<C>> for STSBuilder<C> {
-    fn from(_: &SampleOn<C>) -> Self {
-        todo!()
+
+impl<C> From<&'_ SampleOn<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &SampleOn<C>) -> Self {
+        let s1 = State::new(0);
+        let s2 = State::new(1);
+        let mut system = STSBuilder::new(&c, s1.clone());
+        tr!(system, &s1 => &s1, {c.base, !c.trigger, !c.out,});
+        tr!(system, &s1 => &s1, {c.base, c.trigger, c.out,});
+        tr!(system, &s1 => &s2, {!c.base, c.trigger, !c.out,});
+        tr!(system, &s1 => &s1, {});
+        tr!(system, &s2 => &s2, {!c.base, c.trigger, !c.out,});
+        tr!(system, &s2 => &s2, {c.base, c.trigger, c.out,});
+        tr!(system, &s2 => &s1, {c.base, !c.trigger, c.out,});
+        tr!(system, &s2 => &s2, {});
+        system
     }
 }
-impl<C> From<&'_ Filter<C>> for STSBuilder<C> {
-    fn from(_: &Filter<C>) -> Self {
-        todo!()
-    }
-}
-impl<C> From<&'_ Repeat<C>> for STSBuilder<C> {
-    fn from(_: &Repeat<C>) -> Self {
-        todo!()
+
+impl<C> From<&'_ Repeat<C>> for STSBuilder<C>
+where
+    C: Clone + Ord + Hash + fmt::Display,
+{
+    fn from(c: &Repeat<C>) -> Self {
+        let from = c.from.unwrap_or(0);
+        let up_to = c.up_to.unwrap_or(from);
+        let delay = max(from, up_to);
+        if delay == 0 && up_to > 0 {
+            panic!("cannot represent as STS: repeat conflicts with up_to");
+        }
+        if c.up_to.is_some() {
+            panic!("up_to is not representable with STS");
+        }
+        let start = State::new(0);
+        let mut system = STSBuilder::new(&c, start.clone());
+        tr!(system, &start => &start, {});
+        let mut repeat_state = start;
+        for i in 1..=delay {
+            let temp = State::new(i);
+            tr!(system, &repeat_state => &temp, {c.base,  !c.out,});
+            tr!(system, &temp => &temp, {});
+            repeat_state = temp;
+        }
+        for i in from..delay {
+            let temp = State::new(i);
+            tr!(system, &temp => &repeat_state, {c.base,  !c.out,});
+        }
+        let mut prev = repeat_state.clone();
+        for i in 1..=c.every - 1 {
+            let temp = State::new(delay + i);
+            tr!(system, &prev => &temp, {c.base, !c.out,});
+            tr!(system, &temp => &temp, {});
+            prev = temp;
+        }
+        tr!(system, &prev => &repeat_state, {c.base,  c.out,});
+        system
     }
 }
 
@@ -648,6 +762,12 @@ impl<C: fmt::Display> fmt::Display for Union<C> {
     }
 }
 
+impl<C: fmt::Display> fmt::Display for Minus<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {} - {}", self.out, self.left, self.right)
+    }
+}
+
 impl<C: fmt::Display> fmt::Display for Intersection<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = ∩({})", self.out, self.args.iter().join(","))
@@ -657,6 +777,40 @@ impl<C: fmt::Display> fmt::Display for Intersection<C> {
 impl<C: fmt::Display> fmt::Display for Delay<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}${}", self.out, self.base, self.delay)
+    }
+}
+
+impl<C: fmt::Display> fmt::Display for Infinity<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = inf({},{})", self.out, self.left, self.right)
+    }
+}
+impl<C: fmt::Display> fmt::Display for Supremum<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = sup({},{})", self.out, self.left, self.right)
+    }
+}
+impl<C: fmt::Display> fmt::Display for SampleOn<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {} sampledOn {}", self.out, self.trigger, self.base)
+    }
+}
+impl<C: fmt::Display> fmt::Display for Diff<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} = {} [{}, {}]",
+            self.out, self.base, self.from, self.up_to
+        )
+    }
+}
+impl<C: fmt::Display> fmt::Display for Repeat<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "repeat {} every {} on {} from {:?} to {:?}",
+            self.out, self.every, self.base, self.from, self.up_to
+        )
     }
 }
 
@@ -723,11 +877,11 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => vec![&c.left, &c.right],
             Constraint::SubClock(c) => vec![&c.left, &c.right],
             Constraint::Exclusion(c) => c.clocks.iter().collect_vec(),
-            Constraint::Infinity(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
-            Constraint::Supremum(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Infinity(c) => vec![&c.out, &c.left, &c.right],
+            Constraint::Supremum(c) => vec![&c.out, &c.left, &c.right],
             Constraint::Union(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
             Constraint::Intersection(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
-            Constraint::Minus(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
+            Constraint::Minus(c) => vec![&c.out, &c.left, &c.right],
             Constraint::Repeat(c) => vec![&c.out, &c.base],
             Constraint::Delay(c) => {
                 c.on.iter()
@@ -735,7 +889,7 @@ impl<C> Constraint<C> {
                     .chain(once(&c.base))
                     .collect_vec()
             }
-            Constraint::SampleOn(c) => vec![&c.out, &c.base, &c.on],
+            Constraint::SampleOn(c) => vec![&c.out, &c.trigger, &c.base],
             Constraint::Diff(c) => vec![&c.out, &c.base],
         }
     }
@@ -749,30 +903,23 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
             Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
             Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
-            Constraint::Infinity(c) => format!("Let {} be inf({})", c.out, c.args.iter().join(",")),
-            Constraint::Supremum(c) => format!("Let {} be sup({})", c.out, c.args.iter().join(",")),
+            Constraint::Infinity(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
+            Constraint::Supremum(c) => format!("Let {} be sup({}, {})", c.out, c.left, c.right),
             Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join(" + ")),
             Constraint::Intersection(c) => {
                 format!("Let {} be {}", c.out, c.args.iter().join(" * "))
             }
-            Constraint::Minus(c) => {
-                format!(
-                    "Let {} be {} - {}",
-                    c.out,
-                    c.base,
-                    c.args.iter().join(" - ")
-                )
-            }
+            Constraint::Minus(c) => format!("Let {} be {} - {}", c.out, c.left, c.right,),
             Constraint::Repeat(c) => format!(
                 "repeat {} every {} {} {} {}",
                 c.out,
-                c.every.map_or("".to_owned(), |v| v.to_string()),
+                c.every.to_string(),
                 c.base,
                 c.from.map_or("".to_owned(), |v| format!("from {}", v)),
                 c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
             ),
             Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
-            Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.base, c.on),
+            Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.trigger, c.base),
             Constraint::Diff(c) => format!("{} = {} [{}, {}]", c.out, c.base, c.from, c.up_to),
         }
     }

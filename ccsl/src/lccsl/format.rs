@@ -62,13 +62,15 @@ mod tests {
             }
             .into(),
             Infinity {
-                out: "a",
-                args: vec!["a", "b"].into_iter().collect(),
+                out: "c",
+                left: "a",
+                right: "b",
             }
             .into(),
             Supremum {
-                out: "a",
-                args: vec!["a", "b"].into_iter().collect(),
+                out: "c",
+                left: "a",
+                right: "b",
             }
             .into(),
             Union {
@@ -82,14 +84,14 @@ mod tests {
             }
             .into(),
             Minus {
-                out: "a",
-                base: "b",
-                args: vec!["c", "d"].into_iter().collect(),
+                out: "c",
+                left: "a",
+                right: "b",
             }
             .into(),
             Repeat {
                 out: "a",
-                every: Some(3),
+                every: 3,
                 base: "b",
                 from: None,
                 up_to: None,
@@ -107,7 +109,7 @@ mod tests {
         let lccsl_format = to_lccsl(&spec, "test");
         let result = parse_raw(&lccsl_format);
 
-        assert!(matches!(result, Ok(_)));
+        assert!(matches!(result, Ok(_)), "{:?}", result);
     }
 
     #[test]
