@@ -17,8 +17,8 @@ use ccsl::lccsl::automata::{
 };
 use ccsl::lccsl::constraints::{Causality, Constraint, Delay, Precedence, Union};
 use ccsl::lccsl::gen::{
-    circle_spec, random_connected_specification, star, to_precedence_spec, to_subclocking_spec,
-    TreeIterator,
+    cycle_spec, cycle_with_spike, cycle_with_tail, cycle_with_tail_and_spike,
+    random_connected_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
 use ccsl::lccsl::opti::{
     heatmap_root, networkx_root, optimize, optimize_by_min_front_init_weights,
@@ -54,8 +54,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let data_dir = opt.dir;
     analyse_specs(
+        &data_dir.join("circle_tail"),
+        gen_spec_flat(3..=4, |size| cycle_with_tail(size)),
+    )?;
+    analyse_specs(
+        &data_dir.join("circle_spike"),
+        gen_spec_flat(3..=4, |size| cycle_with_spike(size)),
+    )?;
+    analyse_specs(
+        &data_dir.join("circle_spike_tail"),
+        gen_spec_flat(3..=4, |size| cycle_with_tail_and_spike(size)),
+    )?;
+    analyse_specs(
         &data_dir.join("circle"),
-        gen_spec(3..=8, |size| circle_spec(size).unwrap()),
+        gen_spec(3..=8, |size| cycle_spec(size).unwrap()),
     )?;
     analyse_specs(
         &data_dir.join("star/precedence"),
@@ -245,10 +257,10 @@ fn all_optimizations_to_parquet<'a>(
             "networkx.min_front",
             Box::new(|spec| optimize::<_, L>(spec, &networkx_root, &order_by_min_front)),
         ),
-        (
-            "heatmap.min_front",
-            Box::new(|spec| optimize::<_, L>(spec, &heatmap_root, &order_by_min_front)),
-        ),
+        // (
+        //     "heatmap.min_front",
+        //     Box::new(|spec| optimize::<_, L>(spec, &heatmap_root, &order_by_min_front)),
+        // ),
         (
             "tricost.min_front",
             Box::new(optimize_by_min_front_with_tricost_root::<u32, L>),
@@ -269,10 +281,10 @@ fn all_optimizations_to_parquet<'a>(
             "networkx.dijkstra",
             Box::new(optimize_dijkstra_with_networkx_root::<u32, L>),
         ),
-        (
-            "heatmap.dijkstra",
-            Box::new(optimize_dijkstra_with_heatmap_root::<u32, L>),
-        ),
+        // (
+        //     "heatmap.dijkstra",
+        //     Box::new(optimize_dijkstra_with_heatmap_root::<u32, L>),
+        // ),
         (
             "tricost.dijkstra",
             Box::new(|spec| optimize::<_, L>(spec, &root_by_tricost, &order_via_dijkstra)),

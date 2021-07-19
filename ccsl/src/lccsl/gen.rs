@@ -11,7 +11,7 @@ use crate::lccsl::constraints::{
 use std::cmp::max;
 use std::collections::BTreeSet;
 
-pub fn circle_spec(size: usize) -> Option<Vec<Constraint<usize>>> {
+pub fn cycle_spec(size: usize) -> Option<Vec<Constraint<usize>>> {
     if size <= 1 {
         None
     } else {
@@ -354,7 +354,7 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
                 }
             })
             .collect();
-        let c: Constraint<usize> = match rng.gen_range(0..6) {
+        let c: Constraint<usize> = match rng.gen_range(0..11) {
             0 => Causality {
                 left,
                 right,
@@ -597,4 +597,69 @@ pub fn random_tree(seed: u64, vertices: usize, edge_hint: usize) -> (StdRng, UnG
         g.add_edge(NodeIndex::new(rng.gen_range(0..i)), n, ());
     }
     (rng, g)
+}
+
+pub fn cycle_with_tail(size: usize) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
+    let orig_spec = cycle_spec(size).unwrap();
+    (0..size - 1).into_iter().map(move |i| {
+        orig_spec
+            .iter()
+            .cloned()
+            .chain(add_chain(size, i, 3, false))
+            .collect_vec()
+    })
+}
+
+pub fn cycle_with_spike(size: usize) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
+    let orig_spec = cycle_spec(size).unwrap();
+    (0..size - 1).into_iter().map(move |i| {
+        orig_spec
+            .iter()
+            .cloned()
+            .chain(add_chain(size, i, 3, true))
+            .collect_vec()
+    })
+}
+pub fn cycle_with_tail_and_spike(
+    size: usize,
+) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
+    let orig_spec = cycle_spec(size).unwrap();
+    (0..size - 1).into_iter().map(move |i| {
+        orig_spec
+            .iter()
+            .cloned()
+            .chain(add_chain(size, i, 2, false))
+            .chain(add_chain(size + 2, size - i - 1, 2, true))
+            .collect_vec()
+    })
+}
+
+fn add_chain(clock_size: usize, pos: usize, tail: usize, out: bool) -> Vec<Constraint<usize>> {
+    let mut constraints = Vec::with_capacity(tail + 1);
+    for (l, r) in (clock_size..clock_size + tail).tuple_windows() {
+        constraints.push(
+            Precedence {
+                left: l,
+                right: r,
+                init: None,
+                max: None,
+            }
+            .into(),
+        );
+    }
+    let (l, r) = if out {
+        (pos, clock_size)
+    } else {
+        (clock_size + tail - 1, pos)
+    };
+    constraints.push(
+        Precedence {
+            left: l,
+            right: r,
+            init: None,
+            max: None,
+        }
+        .into(),
+    );
+    constraints
 }
