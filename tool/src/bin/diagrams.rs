@@ -1,6 +1,15 @@
-use std::path::PathBuf;
-use tool::all_constraints;
+use std::path::{Path, PathBuf};
+use tool::{
+    all_constraints, vec_into_vec, write_graph_indexed, write_graph_indexed_debug,
+    write_graph_no_label,
+};
 
+use ccsl::lccsl::algo::generate_combinations;
+use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
+use ccsl::lccsl::constraints::{Constraint, Precedence, Subclocking};
+use ccsl::lccsl::vizualization::unfold_specification;
+use itertools::Itertools;
+use permutation::Permutation;
 use std::error::Error;
 use structopt::StructOpt;
 
@@ -12,5 +21,62 @@ struct Opt {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
-    all_constraints(&opt.dir)
+    all_constraints(&opt.dir)?;
+
+    let subclock_spec: Vec<Constraint<u32>> = vec![
+        Subclocking { left: 0, right: 1 }.into(),
+        Subclocking { left: 1, right: 2 }.into(),
+        Subclocking { left: 2, right: 3 }.into(),
+    ];
+    let prec_spec: Vec<Constraint<u32>> = vec![
+        Precedence {
+            left: 0,
+            right: 1,
+            init: None,
+            max: None,
+        }
+        .into(),
+        Precedence {
+            left: 1,
+            right: 2,
+            init: None,
+            max: None,
+        }
+        .into(),
+        Precedence {
+            left: 2,
+            right: 3,
+            init: None,
+            max: None,
+        }
+        .into(),
+    ];
+    let subclock_spec: Vec<STS<u32, StaticBitmapLabel>> = vec_into_vec(subclock_spec.iter());
+    unfold(&opt, subclock_spec, &opt.dir.join("subclock"))?;
+    let prec_spec: Vec<STS<u32, StaticBitmapLabel>> = vec_into_vec(prec_spec.iter());
+    unfold(&opt, prec_spec, &opt.dir.join("precedence"))?;
+
+    Ok(())
+}
+
+fn unfold(
+    opt: &Opt,
+    spec: Vec<STS<u32, StaticBitmapLabel>>,
+    dir: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let len = spec.len();
+    for (i, perm) in (0..len).permutations(len).enumerate() {
+        let spec_perm = perm.iter().map(|i| spec[*i as usize].clone()).collect_vec();
+        println!("{}\n{}", i, spec_perm.iter().join("\n"));
+        let anti_perm = Permutation::from_vec(perm).inverse();
+        for comb in generate_combinations(&spec_perm) {
+            let orig_comb = anti_perm.apply_slice(comb.as_slice());
+            write_graph_no_label(
+                &unfold_specification(&spec_perm, &comb, true),
+                dir,
+                &format!("{}_({})", i, orig_comb.into_iter().map(|s| s.0).join(",")),
+            )?;
+        }
+    }
+    Ok(())
 }

@@ -44,17 +44,11 @@ fn weights_from_min_outgoing(
         .node_indices()
         .into_iter()
         .map(|n| {
-            let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
-            let w = if count == 0 {
-                Ratio::from(0)
-            } else {
-                conflict_map
-                    .edges_directed(n, Direction::Outgoing)
-                    .map(|e| e.weight().solutions)
-                    .min()
-                    .unwrap()
-            };
-            w
+            conflict_map
+                .edges_directed(n, Direction::Outgoing)
+                .map(|e| e.weight().solutions)
+                .min()
+                .unwrap_or(Ratio::from(usize::MAX))
         })
         .collect_vec();
     weights
@@ -362,7 +356,7 @@ pub fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<us
         res *= &adjacency;
     }
     let weights = res * weights;
-    weights.argmin().0
+    weights.argmax().0
 }
 
 pub fn optimize_dijkstra_with_heatmap_root<C, L>(spec: &[Constraint<C>]) -> Permutation
@@ -497,26 +491,27 @@ pub mod root {
             .into_iter()
             .map(|n| {
                 let count = conflict_map.edges_directed(n, Direction::Outgoing).count();
+                let source_transitions = conflict_map.node_weight(n).unwrap().transitions;
                 if count == 0 {
-                    (
-                        conflict_map.node_weight(n).unwrap().transitions.into(),
-                        Ratio::zero(),
-                    )
+                    (source_transitions.into(), Ratio::zero())
                 } else {
+                    let (edge, sol) = conflict_map
+                        .edges_directed(n, Direction::Outgoing)
+                        .map(|e| (e, e.weight().solutions * source_transitions))
+                        .min_by_key(|(_, w)| *w)
+                        .unwrap();
                     (
-                        conflict_map
-                            .edges_directed(n, Direction::Outgoing)
-                            .map(|e| {
-                                e.weight().solutions
-                                    * conflict_map.node_weight(e.source()).unwrap().transitions
-                            })
-                            .min()
-                            .unwrap(),
-                        conflict_map
-                            .edges_directed(n, Direction::Outgoing)
-                            .map(|e| e.weight().solutions)
-                            .sum::<Ratio<usize>>()
-                            / Ratio::new(count, 1),
+                        sol,
+                        if count > 1 {
+                            conflict_map
+                                .edges_directed(n, Direction::Outgoing)
+                                .filter(|e| e != &edge)
+                                .map(|e| e.weight().solutions)
+                                .sum::<Ratio<usize>>()
+                                / Ratio::new(count - 1, 1)
+                        } else {
+                            Ratio::zero()
+                        },
                     )
                 }
             })

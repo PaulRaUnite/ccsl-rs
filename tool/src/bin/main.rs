@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for _ in 0..(800 - 100 * size) {
             let seed = rng.next_u64();
             fixed_specs.push((seed, random_connected_specification(seed, size, true)));
-            if size < 7 {
+            if size < 6 {
                 unfixed_specs.push((seed, random_connected_specification(seed, size, false)));
             }
         }

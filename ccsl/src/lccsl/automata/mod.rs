@@ -410,7 +410,7 @@ pub struct STS<C, L> {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct StateRef(usize);
+pub struct StateRef(pub usize);
 
 impl<C: Ord + Clone, L: Label<C>> From<STSBuilder<C>> for STS<C, L>
 where
