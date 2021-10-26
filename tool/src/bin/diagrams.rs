@@ -1,8 +1,5 @@
 use std::path::{Path, PathBuf};
-use tool::{
-    all_constraints, vec_into_vec, write_graph_indexed, write_graph_indexed_debug,
-    write_graph_no_label,
-};
+use tool::{all_constraints, vec_into_vec, write_graph_no_label};
 
 use ccsl::lccsl::algo::generate_combinations;
 use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
@@ -52,18 +49,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into(),
     ];
     let subclock_spec: Vec<STS<u32, StaticBitmapLabel>> = vec_into_vec(subclock_spec.iter());
-    unfold(&opt, subclock_spec, &opt.dir.join("subclock"))?;
+    unfold(subclock_spec, &opt.dir.join("subclock"))?;
     let prec_spec: Vec<STS<u32, StaticBitmapLabel>> = vec_into_vec(prec_spec.iter());
-    unfold(&opt, prec_spec, &opt.dir.join("precedence"))?;
+    unfold(prec_spec, &opt.dir.join("precedence"))?;
 
     Ok(())
 }
 
-fn unfold(
-    opt: &Opt,
-    spec: Vec<STS<u32, StaticBitmapLabel>>,
-    dir: &Path,
-) -> Result<(), Box<dyn Error>> {
+fn unfold(spec: Vec<STS<u32, StaticBitmapLabel>>, dir: &Path) -> Result<(), Box<dyn Error>> {
     let len = spec.len();
     for (i, perm) in (0..len).permutations(len).enumerate() {
         let spec_perm = perm.iter().map(|i| spec[*i as usize].clone()).collect_vec();

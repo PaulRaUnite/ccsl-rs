@@ -13,7 +13,7 @@ use structopt::StructOpt;
 
 use ccsl::lccsl::algo::generate_combinations;
 use ccsl::lccsl::automata::{
-    ClockLabelClassic, DynBitmapLabel, RoaringBitmapLabel, StaticBitmapLabel, STS,
+    StaticBitmapLabel, STS,
 };
 use ccsl::lccsl::constraints::{Causality, Constraint, Delay, Precedence, Union};
 use ccsl::lccsl::gen::{
@@ -21,9 +21,9 @@ use ccsl::lccsl::gen::{
     random_connected_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
 use ccsl::lccsl::opti::{
-    heatmap_root, networkx_root, optimize, optimize_by_min_front_init_weights,
+    networkx_root, optimize, optimize_by_min_front_init_weights,
     optimize_by_min_front_with_tricost_root, optimize_by_sort_weights, optimize_by_tree_depth,
-    optimize_by_tree_width, optimize_dijkstra_with_heatmap_root,
+    optimize_by_tree_width,
     optimize_dijkstra_with_networkx_root, order_by_min_front, order_via_dijkstra, root,
     root_by_min_outgoing, root_by_tricost,
 };

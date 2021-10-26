@@ -477,7 +477,6 @@ pub mod root {
     use itertools::Itertools;
     use num::rational::Ratio;
     use num::Zero;
-    use petgraph::prelude::EdgeRef;
     use petgraph::{Direction, Graph};
 
     use crate::lccsl::algo::{ConflictEffect, ConflictSource};
