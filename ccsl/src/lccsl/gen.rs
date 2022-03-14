@@ -406,7 +406,7 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
     spec
 }
 
-fn relation_clocks(rng: &mut StdRng, known: &BTreeSet<usize>, clock_size: usize) -> (usize, usize) {
+fn gen_2_clocks(rng: &mut StdRng, known: &BTreeSet<usize>, clock_size: usize) -> (usize, usize) {
     let left = *known.iter().choose(rng).unwrap();
     let right = rng.gen_range(0..clock_size - 1);
     let right = if right < left { right } else { right + 1 };
@@ -417,7 +417,7 @@ fn relation_clocks(rng: &mut StdRng, known: &BTreeSet<usize>, clock_size: usize)
     }
 }
 
-fn expression_clocks(
+fn gen_expr_clocks(
     rng: &mut StdRng,
     known: &BTreeSet<usize>,
     clock_size: usize,
@@ -454,7 +454,8 @@ pub fn random_connected_specification(
         let constr = rng.gen_range(0..6);
         let c: Constraint<usize> = match constr {
             0 => {
-                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                // TODO: make it compact
+                let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Causality {
@@ -467,7 +468,7 @@ pub fn random_connected_specification(
             }
 
             1 => {
-                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Precedence {
@@ -479,14 +480,14 @@ pub fn random_connected_specification(
                 .into()
             }
             2 => {
-                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Subclocking { left, right }.into()
             }
             3 => {
                 if fixed_size {
-                    let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                    let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                     let clocks = vec![left, right];
                     known_clocks.extend(clocks.iter().copied());
                     Exclusion {
@@ -495,7 +496,7 @@ pub fn random_connected_specification(
                     .into()
                 } else {
                     let (out, mut others) =
-                        expression_clocks(&mut rng, &mut known_clocks, clock_size, false);
+                        gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, false);
                     others.insert(out);
                     known_clocks.extend(others.iter().copied());
                     Exclusion { clocks: others }.into()
@@ -503,21 +504,21 @@ pub fn random_connected_specification(
             }
             4 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
+                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Union { out, args: others }.into()
             }
             5 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
+                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, fixed_size);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 Intersection { out, args: others }.into()
             }
             6 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
@@ -525,7 +526,7 @@ pub fn random_connected_specification(
             }
             7 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
@@ -533,14 +534,14 @@ pub fn random_connected_specification(
             }
             8 => {
                 let (out, others) =
-                    expression_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
                 Minus { out, left, right }.into()
             }
             9 => {
-                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Repeat {
@@ -553,7 +554,7 @@ pub fn random_connected_specification(
                 .into()
             }
             10 => {
-                let (left, right) = relation_clocks(&mut rng, &mut known_clocks, clock_size);
+                let (left, right) = gen_2_clocks(&mut rng, &mut known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Delay {

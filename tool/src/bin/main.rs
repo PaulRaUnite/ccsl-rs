@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut fixed_specs = Vec::new();
     let mut unfixed_specs = Vec::new();
     for size in 4..=7 {
-        for _ in 0..(800 - 100 * size) {
+        for _ in 0..(800 - 70 * size) {
             let seed = rng.next_u64();
             fixed_specs.push((seed, random_connected_specification(seed, size, true)));
             if size < 6 {
@@ -253,10 +253,10 @@ fn all_optimizations_to_parquet<'a>(
             "min_out.min_front",
             Box::new(|spec| optimize::<_, L>(spec, &root_by_min_outgoing, &order_by_min_front)),
         ),
-        (
-            "networkx.min_front",
-            Box::new(|spec| optimize::<_, L>(spec, &networkx_root, &order_by_min_front)),
-        ),
+        // (
+        //     "networkx.min_front",
+        //     Box::new(|spec| optimize::<_, L>(spec, &networkx_root, &order_by_min_front)),
+        // ),
         // (
         //     "heatmap.min_front",
         //     Box::new(|spec| optimize::<_, L>(spec, &heatmap_root, &order_by_min_front)),
@@ -277,10 +277,10 @@ fn all_optimizations_to_parquet<'a>(
             "init_weights.dijkstra",
             Box::new(|spec| optimize::<_, L>(spec, &root::weights_with_init, &order_via_dijkstra)),
         ),
-        (
-            "networkx.dijkstra",
-            Box::new(optimize_dijkstra_with_networkx_root::<u32, L>),
-        ),
+        // (
+        //     "networkx.dijkstra",
+        //     Box::new(optimize_dijkstra_with_networkx_root::<u32, L>),
+        // ),
         // (
         //     "heatmap.dijkstra",
         //     Box::new(optimize_dijkstra_with_heatmap_root::<u32, L>),

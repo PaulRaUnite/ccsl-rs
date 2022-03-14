@@ -453,8 +453,7 @@ pub fn squished_conflict_map<C, L>(
 ) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
+    L: Clone + Eq + Hash + Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
     let squished_spec: Vec<STS<C, L>> = spec
@@ -475,8 +474,7 @@ pub fn squished_limit_map<C, L>(
 ) -> Graph<ConflictSource, ConflictEffect<Ratio<usize>>>
 where
     C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
+    L: Clone + Eq + Hash + Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
     let squished_spec: Vec<STS<C, L>> = spec

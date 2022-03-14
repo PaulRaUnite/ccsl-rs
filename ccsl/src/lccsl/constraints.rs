@@ -871,6 +871,7 @@ impl<C> Constraint<C> {
         }
     }
 
+    // TODO: replace by map invocation
     pub fn clocks(&self) -> Vec<&C> {
         match self {
             Constraint::Causality(c) => vec![&c.left, &c.right],

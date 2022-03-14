@@ -40,7 +40,8 @@ pub enum ParseError {
     Unknown,
 }
 // TODO: parse into a specialized AST/enum, not directly into constrains,
-//  for reasons of encoding/decoding roundtrip
+//  for reasons of encoding/decoding roundtrip: some constraints
+//  are split and so do not preserve the structure.
 
 fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
@@ -477,10 +478,8 @@ mod tests {
             Let out be m and t
             ]
         }";
-        // FIXME: Clocks are not processed as should so there is a discrepancy after encoding
         let spec_const = parse_to_string(spec).expect("should parse");
         let spec = to_lccsl(&spec_const.constraints, &spec_const.name);
-        let spec_const = parse_to_string(&spec).expect("should parse");
         println!("{:?}", spec_const);
         assert_eq!(
             remove_whitespace(&spec),
