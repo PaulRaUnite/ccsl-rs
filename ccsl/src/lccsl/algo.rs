@@ -151,7 +151,7 @@ where
         .map(|x| {
             m2.clone()
                 .into_iter()
-                .map(move |y| if x.label.has_conflict(&y.label) { 0 } else { 1 })
+                .map(move |y| if x.label.has_conflict(y.label) { 0 } else { 1 })
                 .sum()
         })
         .max()
@@ -216,7 +216,7 @@ where
         .map(|x| {
             m2.clone()
                 .into_iter()
-                .map(move |y| if x.label.has_conflict(&y.label) { 0 } else { 1 })
+                .map(move |y| if x.label.has_conflict(y.label) { 0 } else { 1 })
                 .sum::<usize>()
         })
         .sum()

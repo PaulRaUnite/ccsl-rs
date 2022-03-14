@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
+use std::iter::{FromIterator, once};
 use std::ops::{BitOr, Index, Range};
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ pub struct State<C> {
 impl<C> Clone for State<C> {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             invariant: self.invariant.clone(),
         }
     }
@@ -41,7 +41,7 @@ impl<C> Clone for State<C> {
 
 impl<C> PartialEq for State<C> {
     fn eq(&self, other: &Self) -> bool {
-        &self.id == &other.id
+        self.id == other.id
     }
 }
 
@@ -91,7 +91,7 @@ impl<C> State<C> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct MergedTransition<'a, C, L> {
     pub from: StateRef,
     pub label: &'a L,
@@ -321,9 +321,9 @@ where
         let switch = self
             .transitions
             .entry(from.clone())
-            .or_insert_with(|| Default::default())
+            .or_insert_with(Default::default)
             .entry(label)
-            .or_insert_with(|| Switch::new());
+            .or_insert_with(Switch::new);
         if let Some(guard) = guard {
             switch.add_variant(guard, to.clone())
         } else {
@@ -407,6 +407,7 @@ pub struct STS<C, L> {
     clocks: BTreeSet<C>,
     transitions: Vec<(L, Switch<Expr<C>, State<C>>)>,
     initial_state: usize,
+    empty_transition: (L, Switch<Expr<C>, State<C>>),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -443,6 +444,7 @@ where
                     .map(|(label, s)| ((&clocks, &label).into(), s)),
             );
         }
+        let empty_transition:(L,Switch<_,_>) = ((&clocks, &BTreeSet::new()).into(), Switch::new());
 
         Self {
             name,
@@ -451,6 +453,7 @@ where
             clocks,
             transitions,
             initial_state,
+            empty_transition,
         }
     }
 }
@@ -477,9 +480,9 @@ impl<C, L> STS<C, L> {
         self.transitions
             .get(self.states_to_trans[state.0].clone())
             .unwrap()
-            .into_iter()
+            .iter().chain(once(&self.empty_transition))//TODO: switch should point to the state
             .map(move |(label, switch)| MergedTransition {
-                from: state.clone(),
+                from: state,
                 label,
                 switch,
             })
@@ -514,6 +517,7 @@ impl<C, L: Clone + Hash + Eq> STS<C, L> {
             clocks: self.clocks,
             transitions,
             initial_state: 0,
+            empty_transition: self.empty_transition,
         }
     }
 }
@@ -537,7 +541,7 @@ impl<'a, C, L> From<&'a STS<C, L>> for petgraph::Graph<State<C>, &'a L> {
                     graph.add_edge(
                         *nodes.get(&t.from.0).unwrap(),
                         *nodes.get(&to.id).unwrap(),
-                        t.label.clone(),
+                        t.label,
                     );
                 }
             }
@@ -592,7 +596,7 @@ impl<'a, 'b> BitOr<&'b RoaringBitmapLabel> for &'a RoaringBitmapLabel {
     fn bitor(self, rhs: &'b RoaringBitmapLabel) -> Self::Output {
         RoaringBitmapLabel {
             clocks: &self.clocks | &rhs.clocks,
-            selection: &self.selection | &self.selection,
+            selection: &self.selection | &rhs.selection,
         }
     }
 }
@@ -608,8 +612,8 @@ impl Hash for RoaringBitmapLabel {
 impl<'a, 'b> From<(&'a BTreeSet<u32>, &'b BTreeSet<u32>)> for RoaringBitmapLabel {
     fn from((clocks, label): (&'a BTreeSet<u32>, &'b BTreeSet<u32>)) -> Self {
         Self {
-            clocks: clocks.iter().map(|v| *v).collect(),
-            selection: label.iter().map(|v| *v).collect(),
+            clocks: clocks.iter().copied().collect(),
+            selection: label.iter().copied().collect(),
         }
     }
 }

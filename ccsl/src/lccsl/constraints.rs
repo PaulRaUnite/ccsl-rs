@@ -337,7 +337,6 @@ where
         let state = State::new(0).with_invariant(var.eq(0));
         let mut system = STSBuilder::new(&c, state.clone());
         tr!(system, &state => &state, {c.left, c.right,});
-        tr!(system, &state => &state, {!c.left, !c.right,});
 
         system
     }
@@ -354,9 +353,7 @@ where
         let mut system = STSBuilder::new(&c, start.clone());
 
         tr!(system, &start => &alt, {c.left, !c.right,});
-        tr!(system, &start => &start, {!c.left, !c.right,});
         tr!(system, &alt => &start, {!c.left, c.right,});
-        tr!(system, &alt => &alt, {!c.left, !c.right,});
 
         system
     }
@@ -402,12 +399,10 @@ where
         let mut system = STSBuilder::new(&c, init);
         let last = max(c.init, c.max).unwrap_or(1);
         let mut prev = State::new(0);
-        tr!(system, &prev => &prev, {!c.left, !c.right,});
         for i in 1..=(last - 1) {
             let next = State::new(i);
             tr!(system, &prev => &next, {c.left, !c.right,});
             tr!(system, &next => &next, {c.left, c.right,});
-            tr!(system, &next => &next, {!c.left, !c.right,});
             tr!(system, &next => &prev, {!c.left, c.right,});
             prev = next;
         }
@@ -421,7 +416,6 @@ where
         }
         tr!(system, &prev => &last, {c.left, !c.right,});
         tr!(system, &last => &last, {c.left, c.right,});
-        tr!(system, &last => &last, {!c.left, !c.right,});
 
         system
     }
@@ -435,7 +429,6 @@ where
         let start = State::new(0);
         let mut system: STSBuilder<C> = STSBuilder::new(&c, start.clone());
 
-        tr!(system, &start => &start, {});
         for clock in &c.clocks {
             tr!(system, &start => &start, {clock.clone(),});
         }
@@ -454,7 +447,6 @@ where
 
         tr!(system, &start => &start, {c.right,});
         tr!(system, &start => &start, {c.left, c.right,});
-        tr!(system, &start => &start, {});
         system
     }
 }
@@ -484,7 +476,6 @@ where
                 )
             }
         }
-        tr!(system, &start => &start, {});
         system
     }
 }
@@ -511,7 +502,6 @@ where
                 .map(|c| (c.clone(), true))
                 .collect_vec(),
         );
-        tr!(system, &start => &start, {});
         system
     }
 }
@@ -528,11 +518,9 @@ where
         for i in 1..=c.delay {
             let state = State::new(i).with_invariant(var.eq(i64::try_from(i).unwrap()));
             tr!(system, &last => &state, {c.base,});
-            tr!(system, &state => &state, {});
             last = state;
         }
         tr!(system, &last => &last, {c.out, c.base,});
-        tr!(system, &start => &start, {});
         system
     }
 }
@@ -548,19 +536,16 @@ where
         let plus = State::new(2);
         let mut system = STSBuilder::new(&c, zero.clone());
         tr!(system, &zero => &zero, {c.left, c.right, c.out,});
-        tr!(system, &zero => &zero, {});
         tr!(system, &zero => &plus, {c.left, !c.right, c.out,});
         tr!(system, &zero => &minus, {!c.left, c.right, c.out,});
 
         tr!(system, &plus => &plus, {c.left, c.right, c.out,});
         tr!(system, &plus => &plus, {c.left, !c.right, c.out,});
-        tr!(system, &plus => &plus, {});
         tr!(system, var.more(1), &plus => &plus, {!c.left, c.right, !c.out,});
         tr!(system, var.eq(1), &plus => &zero, {!c.left, c.right, !c.out,});
 
         tr!(system, &minus => &minus, {c.left, c.right, c.out,});
         tr!(system, &minus => &minus, {!c.left, c.right, c.out,});
-        tr!(system, &minus => &minus, {});
         tr!(system, var.less(-1), &minus => &minus, {c.left, !c.right, !c.out,});
         tr!(system, var.eq(-1), &minus => &zero, {c.left, !c.right, !c.out,});
         system
@@ -580,17 +565,14 @@ where
         tr!(system, &zero => &zero, {c.left, c.right, c.out,});
         tr!(system, &zero => &plus, {c.left, !c.right, !c.out,});
         tr!(system, &zero => &minus, {!c.left, c.right, !c.out,});
-        tr!(system, &zero => &zero, {});
         tr!(system, &plus => &plus, {c.left, c.right, !c.out,});
         tr!(system, &plus => &plus, {c.left, !c.right, !c.out,});
         tr!(system, var.more(1), &plus => &plus, {!c.left, c.right, c.out,});
         tr!(system, var.eq(1), &plus => &zero, {!c.left, c.right, c.out,});
-        tr!(system, &plus => &plus, {});
         tr!(system, &minus => &minus, {c.left, c.right, !c.out,});
         tr!(system, &minus => &minus, {!c.left, c.right, !c.out,});
         tr!(system, var.less(-1), &minus => &minus, {c.left, !c.right, c.out,});
         tr!(system, var.eq(-1), &minus => &zero, {c.left, !c.right, c.out,});
-        tr!(system, &minus => &minus, {});
         system
     }
 }
@@ -604,7 +586,6 @@ where
         tr!(system, &s => &s, {c.out, c.left, !c.right,});
         tr!(system, &s => &s, {!c.out, c.left, c.right,});
         tr!(system, &s => &s, {!c.out, !c.left, c.right,});
-        tr!(system, &s => &s, {});
         system
     }
 }
@@ -637,11 +618,9 @@ where
         tr!(system, &s1 => &s1, {c.base, !c.trigger, !c.out,});
         tr!(system, &s1 => &s1, {c.base, c.trigger, c.out,});
         tr!(system, &s1 => &s2, {!c.base, c.trigger, !c.out,});
-        tr!(system, &s1 => &s1, {});
         tr!(system, &s2 => &s2, {!c.base, c.trigger, !c.out,});
         tr!(system, &s2 => &s2, {c.base, c.trigger, c.out,});
         tr!(system, &s2 => &s1, {c.base, !c.trigger, c.out,});
-        tr!(system, &s2 => &s2, {});
         system
     }
 }
@@ -662,12 +641,10 @@ where
         }
         let start = State::new(0);
         let mut system = STSBuilder::new(&c, start.clone());
-        tr!(system, &start => &start, {});
         let mut repeat_state = start;
         for i in 1..=delay {
             let temp = State::new(i);
             tr!(system, &repeat_state => &temp, {c.base,  !c.out,});
-            tr!(system, &temp => &temp, {});
             repeat_state = temp;
         }
         for i in from..delay {
@@ -678,7 +655,6 @@ where
         for i in 1..=c.every - 1 {
             let temp = State::new(delay + i);
             tr!(system, &prev => &temp, {c.base, !c.out,});
-            tr!(system, &temp => &temp, {});
             prev = temp;
         }
         tr!(system, &prev => &repeat_state, {c.base,  c.out,});
@@ -686,21 +662,21 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn into_automaton() {
-        let a: STSBuilder<&str> = (&Coincidence {
-            left: "a",
-            right: "b",
-        })
-            .into();
-        println!("{:?}", a);
-        assert_eq!(1, 2)
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn into_automaton() {
+//         let a: STSBuilder<&str> = (&Coincidence {
+//             left: "a",
+//             right: "b",
+//         })
+//             .into();
+//         println!("{:?}", a);
+//         assert_eq!(a, 2)
+//     }
+// }
 
 impl<C: fmt::Display> fmt::Display for Coincidence<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
