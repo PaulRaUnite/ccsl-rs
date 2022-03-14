@@ -315,7 +315,7 @@ where
     L: Label<C> + Clone + Hash + Eq + Sync,
     for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {
-    let mut visitor = CountingVisitor::new();
+    let mut visitor = CountingVisitor::default();
     let actual = find_solutions(spec, &comb, Some(&mut visitor));
     let dep_map = limit_conflict_map(spec, &comb);
     let limit = complexity_from_graph(&dep_map);
@@ -408,11 +408,11 @@ where
 macro_rules! collection {
     // map-like
     ($($k:expr => $v:expr),* $(,)?) => {
-        std::iter::Iterator::collect(std::array::IntoIter::new([$(($k, $v),)*]))
+        std::iter::Iterator::collect(IntoIterator::into_iter([$(($k, $v),)*]))
     };
     // set-like
     ($($v:expr),* $(,)?) => {
-        std::iter::Iterator::collect(std::array::IntoIter::new([$($v,)*]))
+        std::iter::Iterator::collect(IntoIterator::into_iter([$($v,)*]))
     };
 }
 

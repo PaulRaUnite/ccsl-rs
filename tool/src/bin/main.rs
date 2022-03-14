@@ -21,10 +21,10 @@ use ccsl::lccsl::gen::{
     random_connected_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
 use ccsl::lccsl::opti::{
-    networkx_root, optimize, optimize_by_min_front_init_weights,
+    optimize, optimize_by_min_front_init_weights,
     optimize_by_min_front_with_tricost_root, optimize_by_sort_weights, optimize_by_tree_depth,
     optimize_by_tree_width,
-    optimize_dijkstra_with_networkx_root, order_by_min_front, order_via_dijkstra, root,
+    order_by_min_front, order_via_dijkstra, root,
     root_by_min_outgoing, root_by_tricost,
 };
 use permutation::Permutation;
@@ -253,14 +253,6 @@ fn all_optimizations_to_parquet<'a>(
             "min_out.min_front",
             Box::new(|spec| optimize::<_, L>(spec, &root_by_min_outgoing, &order_by_min_front)),
         ),
-        // (
-        //     "networkx.min_front",
-        //     Box::new(|spec| optimize::<_, L>(spec, &networkx_root, &order_by_min_front)),
-        // ),
-        // (
-        //     "heatmap.min_front",
-        //     Box::new(|spec| optimize::<_, L>(spec, &heatmap_root, &order_by_min_front)),
-        // ),
         (
             "tricost.min_front",
             Box::new(optimize_by_min_front_with_tricost_root::<u32, L>),
@@ -277,14 +269,6 @@ fn all_optimizations_to_parquet<'a>(
             "init_weights.dijkstra",
             Box::new(|spec| optimize::<_, L>(spec, &root::weights_with_init, &order_via_dijkstra)),
         ),
-        // (
-        //     "networkx.dijkstra",
-        //     Box::new(optimize_dijkstra_with_networkx_root::<u32, L>),
-        // ),
-        // (
-        //     "heatmap.dijkstra",
-        //     Box::new(optimize_dijkstra_with_heatmap_root::<u32, L>),
-        // ),
         (
             "tricost.dijkstra",
             Box::new(|spec| optimize::<_, L>(spec, &root_by_tricost, &order_via_dijkstra)),

@@ -222,6 +222,7 @@ where
         .sum()
 }
 
+#[derive(Default)]
 pub struct CountingVisitor {
     pub test: usize,
     pub down: usize,
@@ -232,16 +233,6 @@ pub trait Visitor<C> {
     fn test(&mut self);
     fn down(&mut self);
     fn solution(&mut self);
-}
-
-impl CountingVisitor {
-    pub fn new() -> Self {
-        Self {
-            test: 0,
-            down: 0,
-            solutions: 0,
-        }
-    }
 }
 
 impl<C> Visitor<C> for CountingVisitor {
@@ -384,7 +375,7 @@ where
             .filter_map(|e| {
                 if selected.contains(&e.source()) {
                     Some((
-                        (e.weight().solutions.clone() * aprox.solutions)
+                        (e.weight().solutions * aprox.solutions)
                             .ceil()
                             .to_usize()
                             .unwrap(),
@@ -431,7 +422,6 @@ where
         .map(|c| {
             Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
                 .squish()
-                .into()
         })
         .collect_vec();
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
@@ -461,7 +451,6 @@ where
         .map(|c| {
             Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
                 .squish()
-                .into()
         })
         .collect_vec();
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
@@ -482,7 +471,6 @@ where
         .map(|c| {
             Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
                 .squish()
-                .into()
         })
         .collect_vec();
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();

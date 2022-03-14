@@ -93,7 +93,7 @@ pub struct TreeIterator {
     current_level_sequence: Vec<i64>,
     l: Vec<i64>,
     vertices: usize,
-    k: i64,
+    //k: i64, TODO: why unused? maybe can remove some other variables?
     p: i64,
     q: i64,
     h1: i64,
@@ -109,7 +109,7 @@ impl TreeIterator {
             current_level_sequence: vec![],
             l: vec![],
             vertices,
-            k: 0,
+            //k: 0,
             p: 0,
             q: 0,
             h1: 0,
@@ -184,12 +184,12 @@ impl TreeIterator {
                 p = r;
                 q = w[(r - 1) as usize];
                 if h1 == r {
-                    h1 = h1 - 1;
+                    h1 -= 1;
                 }
                 fixit = 1;
             } else {
                 p = r;
-                r = r - 1;
+                r -= 1;
                 q = 2;
             }
         }

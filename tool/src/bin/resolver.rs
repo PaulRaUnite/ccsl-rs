@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let comb_id = app.opt.comb;
     let size = app.opt.size;
 
-    let dir = Path::new("/home/paulra/Code/ccsl-rs/tool/dot/resolver/");
+    let dir = Path::new("./graph/resolver/");
 
     let spec = random_connected_specification(spec_id, size, true)
         .into_iter()

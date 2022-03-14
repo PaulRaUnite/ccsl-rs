@@ -2,15 +2,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
-use std::io::Write;
 use std::mem::swap;
 use std::ops::{Add, BitOr};
-use std::process::{Command, Stdio};
 
 use itertools::Itertools;
-use na::{DMatrix, DVector};
 use num::rational::Ratio;
-use num::{ToPrimitive, Zero};
+use num::{Zero};
 use permutation::{sort, Permutation};
 use petgraph::algo::{dijkstra, min_spanning_tree};
 use petgraph::data::FromElements;
@@ -287,109 +284,6 @@ impl Default for Weight {
     }
 }
 
-pub fn optimize_dijkstra_with_networkx_root<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let conflict_map = squished_conflict_map(spec);
-    let root_idx = networkx_root(&conflict_map);
-    order_via_dijkstra(&conflict_map, root_idx)
-}
-
-pub fn networkx_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
-    let mut proc = Command::new("bash")
-        .arg("/home/paulra/Code/ccsl-rs/rooter/run.sh")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn rooter");
-    let stdin = proc.stdin.as_mut().expect("failed to get stdin");
-    let edge_count = conflict_map.edge_count();
-    for (i, e) in conflict_map.raw_edges().into_iter().enumerate() {
-        write!(
-            stdin,
-            "{} {} {{'weight':{}}}",
-            e.source().index(),
-            e.target().index(),
-            e.weight.solutions.to_f64().expect("failed to get f64")
-        )
-        .expect("failed to write edge");
-        if i != (edge_count - 1) {
-            write!(stdin, "\n").expect("failed to write newline");
-        }
-    }
-
-    let output = proc.wait_with_output().expect("failed to wait for process");
-
-    if !output.status.success() {
-        panic!("command executed with failing error code");
-    }
-    let contents = String::from_utf8(output.stdout).expect("failed to decode utf8");
-    let root = contents
-        .strip_suffix("\n")
-        .unwrap()
-        .parse()
-        .expect("failed to parse usize from command");
-    assert!(root < conflict_map.node_count());
-    root
-}
-
-pub fn heatmap_root(conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>) -> usize {
-    let n = conflict_map.node_count();
-    let weights = DVector::from_vec(
-        conflict_map
-            .raw_nodes()
-            .into_iter()
-            .map(|n| Ratio::from_integer(n.weight.transitions))
-            .collect(),
-    );
-    let mut adjacency = DMatrix::zeros(n, n);
-    for e in conflict_map.raw_edges() {
-        let i = e.source().index();
-        let j = e.target().index();
-        adjacency[(i, j)] = e.weight.solutions;
-    }
-    let mut res = DMatrix::identity(n, n);
-    for _ in 1..n {
-        res *= &adjacency;
-    }
-    let weights = res * weights;
-    weights.argmax().0
-}
-
-pub fn optimize_dijkstra_with_heatmap_root<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let conflict_map = squished_conflict_map(spec);
-    let root = heatmap_root(&conflict_map);
-    order_via_dijkstra(&conflict_map, root)
-}
-//
-// pub fn find_root_from_topology<C, L>(spec: &[Constraint<C>]) -> usize
-// where
-//     C: Clone + Hash + Ord + Display,
-//     L: Clone + Eq + Hash,
-//     L: Label<C>,
-//     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-// {
-//     let conflict_map = squished_map(spec);
-//     let (nodes, edges) = (conflict_map.raw_nodes(), conflict_map.raw_edges());
-//
-//     // init
-//     let root = weights_by_min_outgoing(spec)
-//         .into_iter()
-//         .position_min()
-//         .expect("failed to get min");
-//     0
-// }
-//
 pub fn root_by_tricost(
     conflict_map: &Graph<ConflictSource, ConflictEffect<Ratio<usize>>>,
 ) -> usize {

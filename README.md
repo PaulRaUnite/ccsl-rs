@@ -10,7 +10,18 @@ opening new terminal window and call `cargo`.
 Be sure Rust env variables were added to `~/.profile`.
 Session restart (log out/log in;system restart) may be needed.
 
-## LightCCSL generator
+## Optimization experiment
+How to reproduce:
+1. run `main.rs`,
+2. open `plotter/comparison.ipynb` in Jupyter Notebook,
+3. choose a directory with generated data instead of `./data/random/fixed/` or leave it as is,
+4. run the cells
+
+### Note
+Starting from commit `08581730c74f11f14410bddaae3315a59b1f0681`, the app doesn't test some competing algorithms.
+They perform badly and one crashes the generation for some reason.
+
+## LightCCSL specification generator
 
 Prerequisites: Rust and Git installed, few Gb of free disk space (for dependencies and module object files).
 
