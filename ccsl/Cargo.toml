@@ -15,8 +15,8 @@ itertools = "0.10"
 num = "0.4"
 rand = "0.8"
 permutation = "0.2"
-roaring = "0.7"
-bitmaps = "3.1"
+roaring = "0.9"
+bitmaps = "3.2"
 lazy_static = "1.4"
 
 [dependencies.derive_more]
