@@ -31,7 +31,7 @@ impl<R: PartialOrd> PartialOrd for ConflictEffect<R> {
     }
 }
 
-impl<R: fmt::Display> fmt::Display for ConflictEffect<R> {
+impl<R: Display> Display for ConflictEffect<R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.solutions, self.all)
     }
@@ -43,7 +43,7 @@ pub struct ConflictSource {
     pub transitions: usize,
 }
 
-impl fmt::Display for ConflictSource {
+impl Display for ConflictSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.name, self.transitions)
     }
@@ -249,7 +249,7 @@ impl<C> Visitor<C> for CountingVisitor {
     }
 }
 
-impl fmt::Display for CountingVisitor {
+impl Display for CountingVisitor {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -328,7 +328,7 @@ pub struct Complexity {
     pub tests: usize,
 }
 
-impl fmt::Display for Complexity {
+impl Display for Complexity {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
@@ -391,17 +391,17 @@ where
                 (aprox.solutions * t, aprox.all * t)
             });
         selected.insert(to);
-        aprox.downs = aprox.downs + solution;
-        aprox.tests = aprox.tests + aprox.solutions * g.node_weight(to).unwrap().transitions;
+        aprox.downs += solution;
+        aprox.tests += aprox.solutions * g.node_weight(to).unwrap().transitions;
         aprox.solutions = solution;
         aprox.all = all;
     }
     aprox
 }
 
-pub fn generate_combinations<'a, C, L>(
-    spec: &'a [STS<C, L>],
-) -> impl Iterator<Item = Vec<StateRef>> + 'a + Send
+pub fn generate_combinations<C, L>(
+    spec: &[STS<C, L>],
+) -> impl Iterator<Item = Vec<StateRef>> + '_ + Send
 where
     C: Ord + Hash + Clone,
 {
@@ -417,13 +417,7 @@ where
     L: Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-        })
-        .collect_vec();
+    let squished_spec: Vec<STS<C, L>> = squish_specification(spec);
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
     let conflict_map = approx_conflict_map_undirect(&squished_spec, &comb);
     let mut new = Graph::with_capacity(conflict_map.node_count(), conflict_map.edge_count() / 2);
@@ -446,16 +440,9 @@ where
     L: Clone + Eq + Hash + Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-        })
-        .collect_vec();
+    let squished_spec: Vec<STS<C, L>> = squish_specification(spec);
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
-    let conflict_map = approx_conflict_map(&squished_spec, &comb);
-    conflict_map
+    approx_conflict_map(&squished_spec, &comb)
 }
 
 pub fn squished_limit_map<C, L>(
@@ -466,13 +453,7 @@ where
     L: Clone + Eq + Hash + Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    let squished_spec: Vec<STS<C, L>> = spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-        })
-        .collect_vec();
+    let squished_spec: Vec<STS<C, L>> = squish_specification(spec);
     let comb = squished_spec.iter().map(|c| c.initial()).collect_vec();
     let conflict_map = limit_conflict_map(&squished_spec, &comb);
     conflict_map.map(
@@ -482,4 +463,19 @@ where
             all: e.all,
         },
     )
+}
+
+fn squish_specification<C,L>(spec: &[Constraint<C>]) -> Vec<STS<C,L>>
+where
+    C: Clone + Hash + Ord + Display,
+    L: Clone + Eq + Hash + Label<C>,
+    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
+{
+    spec
+        .iter()
+        .map(|c| {
+            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
+                .squish()
+        })
+        .collect_vec()
 }

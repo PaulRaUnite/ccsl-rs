@@ -327,7 +327,7 @@ impl Iterator for TreeIterator {
 
 pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(size);
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
     let clock_size = 2 * size;
 
     for _ in 0..size {
@@ -445,7 +445,7 @@ pub fn random_connected_specification(
     fixed_size: bool,
 ) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(size);
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
     let clock_size = 3 * size;
     let mut known_clocks = BTreeSet::new();
     known_clocks.insert(0);
@@ -591,7 +591,7 @@ pub fn random_connected_graph(seed: u64, vertices: usize) -> UnGraph<(), ()> {
 pub fn random_tree(seed: u64, vertices: usize, edge_hint: usize) -> (StdRng, UnGraph<(), ()>) {
     assert!(vertices > 0);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut g = UnGraph::with_capacity(vertices, max(edge_hint, vertices - 1));
     for i in 1..vertices {
         let n = g.add_node(());

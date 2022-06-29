@@ -307,7 +307,7 @@ pub enum Constraint<C> {
 
 impl<C> From<&'_ Constraint<C>> for STSBuilder<C>
 where
-    C: Hash + Clone + Ord + fmt::Display,
+    C: Hash + Clone + Ord + Display,
 {
     fn from(c: &Constraint<C>) -> Self {
         match c {
@@ -330,7 +330,7 @@ where
 
 impl<C> From<&'_ Coincidence<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Coincidence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
@@ -344,7 +344,7 @@ where
 
 impl<C> From<&'_ Alternates<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Alternates<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
@@ -361,7 +361,7 @@ where
 
 impl<C> From<&'_ Causality<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Causality<C>) -> Self {
         let mut system: STSBuilder<C> = (&Precedence {
@@ -380,7 +380,7 @@ where
 
 impl<C> From<&'_ Precedence<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Precedence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
@@ -423,7 +423,7 @@ where
 
 impl<C> From<&'_ Exclusion<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Exclusion<C>) -> Self {
         let start = State::new(0);
@@ -438,7 +438,7 @@ where
 
 impl<C> From<&'_ Subclocking<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Subclocking<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.right.clone(), c.left.clone()));
@@ -453,7 +453,7 @@ where
 
 impl<C> From<&'_ Union<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Union<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
@@ -482,7 +482,7 @@ where
 
 impl<C> From<&'_ Intersection<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Intersection<C>) -> Self {
         let mut invariant = BooleanExpression::Constant(true);
@@ -507,7 +507,7 @@ where
 }
 impl<C> From<&'_ Delay<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Delay<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
@@ -527,7 +527,7 @@ where
 
 impl<C> From<&'_ Infinity<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Infinity<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
@@ -554,7 +554,7 @@ where
 
 impl<C> From<&'_ Supremum<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Supremum<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
@@ -578,7 +578,7 @@ where
 }
 impl<C> From<&'_ Minus<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Minus<C>) -> Self {
         let s = State::new(0);
@@ -591,7 +591,7 @@ where
 }
 impl<C> From<&'_ Diff<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Diff<C>) -> Self {
         let mut sts: STSBuilder<C> = (&Repeat {
@@ -609,7 +609,7 @@ where
 
 impl<C> From<&'_ SampleOn<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &SampleOn<C>) -> Self {
         let s1 = State::new(0);
@@ -627,7 +627,7 @@ where
 
 impl<C> From<&'_ Repeat<C>> for STSBuilder<C>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Repeat<C>) -> Self {
         let from = c.from.unwrap_or(0);
@@ -678,19 +678,19 @@ where
 //     }
 // }
 
-impl<C: fmt::Display> fmt::Display for Coincidence<C> {
+impl<C: Display> Display for Coincidence<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}", self.left, self.right)
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Alternates<C> {
+impl<C: Display> Display for Alternates<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ~ {}", self.left, self.right)
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Causality<C> {
+impl<C: Display> Display for Causality<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match (self.init, self.max) {
             (Some(init), Some(max)) => write!(
@@ -705,7 +705,7 @@ impl<C: fmt::Display> fmt::Display for Causality<C> {
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Precedence<C> {
+impl<C: Display> Display for Precedence<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match (self.init, self.max) {
             (Some(init), Some(max)) => write!(
@@ -720,58 +720,58 @@ impl<C: fmt::Display> fmt::Display for Precedence<C> {
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Exclusion<C> {
+impl<C: Display> Display for Exclusion<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "#({})", self.clocks.iter().join(","))
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Subclocking<C> {
+impl<C: Display> Display for Subclocking<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ⊂ {}", self.left, self.right)
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Union<C> {
+impl<C: Display> Display for Union<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = ∪({})", self.out, self.args.iter().join(","))
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Minus<C> {
+impl<C: Display> Display for Minus<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {} - {}", self.out, self.left, self.right)
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Intersection<C> {
+impl<C: Display> Display for Intersection<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = ∩({})", self.out, self.args.iter().join(","))
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Delay<C> {
+impl<C: Display> Display for Delay<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}${}", self.out, self.base, self.delay)
     }
 }
 
-impl<C: fmt::Display> fmt::Display for Infinity<C> {
+impl<C: Display> Display for Infinity<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = inf({},{})", self.out, self.left, self.right)
     }
 }
-impl<C: fmt::Display> fmt::Display for Supremum<C> {
+impl<C: Display> Display for Supremum<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = sup({},{})", self.out, self.left, self.right)
     }
 }
-impl<C: fmt::Display> fmt::Display for SampleOn<C> {
+impl<C: Display> Display for SampleOn<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {} sampledOn {}", self.out, self.trigger, self.base)
     }
 }
-impl<C: fmt::Display> fmt::Display for Diff<C> {
+impl<C: Display> Display for Diff<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -780,7 +780,7 @@ impl<C: fmt::Display> fmt::Display for Diff<C> {
         )
     }
 }
-impl<C: fmt::Display> fmt::Display for Repeat<C> {
+impl<C: Display> Display for Repeat<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -792,7 +792,7 @@ impl<C: fmt::Display> fmt::Display for Repeat<C> {
 
 impl<C, L> From<&'_ Constraint<C>> for STS<C, L>
 where
-    C: Clone + Ord + Hash + fmt::Display,
+    C: Clone + Ord + Hash + Display,
     L: Label<C>,
     for<'c, 'd> &'c L: BitOr<&'d L, Output = L>,
 {

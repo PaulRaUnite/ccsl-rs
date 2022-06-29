@@ -229,13 +229,7 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     constraints.into_iter()
 }
 fn parse_subclocking(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
-    let mut clocks: Vec<ID> = Vec::with_capacity(2);
-    for field in input.into_inner() {
-        match field.as_rule() {
-            Rule::id => clocks.push(field.as_str().to_string().into()),
-            _ => unreachable!(),
-        }
-    }
+    let mut clocks = parse_clock_arguments(input);
     let mut first = clocks.remove(0);
     let mut constraints: Vec<Constraint<ID>> = Vec::with_capacity(clocks.len());
     for clock in clocks {
@@ -250,7 +244,8 @@ fn parse_subclocking(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> 
     }
     constraints.into_iter()
 }
-fn parse_exclusion(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
+
+fn parse_clock_arguments(input: Pair<Rule>) -> Vec<ID> {
     let mut clocks: Vec<ID> = Vec::with_capacity(2);
     for field in input.into_inner() {
         match field.as_rule() {
@@ -258,6 +253,11 @@ fn parse_exclusion(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
             _ => unreachable!(),
         }
     }
+    clocks
+}
+
+fn parse_exclusion(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
+    let mut clocks: Vec<ID> = parse_clock_arguments(input);
     let mut first = clocks.remove(0);
     let mut constraints: Vec<Constraint<ID>> = Vec::with_capacity(clocks.len());
     for clock in clocks {

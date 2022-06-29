@@ -80,7 +80,7 @@ impl<C> State<C> {
     pub const fn new(id: usize) -> State<C> {
         Self {
             id,
-            invariant: Option::None,
+            invariant: None,
         }
     }
     pub fn with_invariant(self, guard: BooleanExpression<Delta<C>>) -> Self {
@@ -363,6 +363,7 @@ impl<C> fmt::Display for STSBuilder<C> {
 
 #[macro_use]
 mod macros {
+    // TODO: replace with vec!
     #[macro_export]
     macro_rules! trigger_value {
         ($container:ident, !$e:expr, $($tail:tt)*) => {
@@ -463,10 +464,10 @@ impl<C, L> STS<C, L> {
         StateRef(self.initial_state)
     }
 
-    pub fn states<'a>(&'a self) -> impl Iterator<Item = StateRef> + 'a + Clone + Debug {
-        (0..self.states.len()).map(|i| StateRef(i))
+    pub fn states(&self) -> impl Iterator<Item = StateRef> + '_ + Clone + Debug {
+        (0..self.states.len()).map(StateRef)
     }
-    pub fn full_states<'a>(&'a self) -> impl Iterator<Item = State<C>> + 'a + Clone {
+    pub fn full_states(&self) -> impl Iterator<Item = State<C>> + '_ + Clone {
         self.states.iter().enumerate().map(|(i, inv)| State {
             id: i,
             invariant: inv.clone(),
