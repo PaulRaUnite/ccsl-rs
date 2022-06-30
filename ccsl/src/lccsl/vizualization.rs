@@ -4,7 +4,8 @@ use std::iter::once;
 use itertools::Itertools;
 use petgraph::Graph;
 
-use crate::lccsl::automata::{Label, StateRef, STS};
+use crate::lccsl::automata::label::Label;
+use crate::lccsl::automata::{StateRef, STS};
 use petgraph::prelude::NodeIndex;
 
 pub fn unfold_specification<'a, 'b, C, L>(

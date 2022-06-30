@@ -1,5 +1,6 @@
 use ccsl::lccsl::algo::{squished_conflict_map, unidirect_squished_map};
-use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
+use ccsl::lccsl::automata::label::StaticBitmapLabel;
+use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::gen::random_connected_specification;
 use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;

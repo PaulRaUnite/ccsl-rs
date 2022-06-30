@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use tool::{all_constraints, vec_into_vec, write_graph_no_label};
 
 use ccsl::lccsl::algo::generate_combinations;
-use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
+use ccsl::lccsl::automata::label::StaticBitmapLabel;
+use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::constraints::{Constraint, Precedence, Subclocking};
 use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;

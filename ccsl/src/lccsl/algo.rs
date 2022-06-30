@@ -10,7 +10,8 @@ use num::rational::Ratio;
 use petgraph::prelude::{EdgeRef, UnGraph};
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::{Label, MergedTransition, STSBuilder, StateRef, STS};
+use crate::lccsl::automata::label::Label;
+use crate::lccsl::automata::{MergedTransition, STSBuilder, StateRef, STS};
 use crate::lccsl::constraints::Constraint;
 use num::{Integer, ToPrimitive};
 
@@ -465,17 +466,13 @@ where
     )
 }
 
-fn squish_specification<C,L>(spec: &[Constraint<C>]) -> Vec<STS<C,L>>
+fn squish_specification<C, L>(spec: &[Constraint<C>]) -> Vec<STS<C, L>>
 where
     C: Clone + Hash + Ord + Display,
     L: Clone + Eq + Hash + Label<C>,
     for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
 {
-    spec
-        .iter()
-        .map(|c| {
-            Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c))
-                .squish()
-        })
+    spec.iter()
+        .map(|c| Into::<STS<C, L>>::into(Into::<STSBuilder<C>>::into(c)).squish())
         .collect_vec()
 }

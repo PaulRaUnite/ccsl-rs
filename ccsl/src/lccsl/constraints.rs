@@ -8,7 +8,8 @@ use std::iter::once;
 use derive_more::{From, Into};
 use itertools::Itertools;
 
-use crate::lccsl::automata::{Delta, Label, STSBuilder, State, STS};
+use crate::lccsl::automata::label::Label;
+use crate::lccsl::automata::{Delta, STSBuilder, State, STS};
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 use std::cmp::max;

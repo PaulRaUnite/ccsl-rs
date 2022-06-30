@@ -7,7 +7,7 @@ use std::ops::{Add, BitOr};
 
 use itertools::Itertools;
 use num::rational::Ratio;
-use num::{Zero};
+use num::Zero;
 use permutation::{sort, Permutation};
 use petgraph::algo::{dijkstra, min_spanning_tree};
 use petgraph::data::FromElements;
@@ -19,7 +19,7 @@ use petgraph::{Direction, Graph};
 use crate::lccsl::algo::{
     squished_conflict_map, unidirect_squished_map, ConflictEffect, ConflictSource,
 };
-use crate::lccsl::automata::Label;
+use crate::lccsl::automata::label::Label;
 use crate::lccsl::constraints::Constraint;
 use crate::lccsl::opti::root::weights_with_init;
 

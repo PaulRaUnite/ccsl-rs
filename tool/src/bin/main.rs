@@ -5,33 +5,30 @@ extern crate parquet;
 extern crate rand;
 
 use std::error::Error;
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use itertools::Itertools;
+use permutation::Permutation;
+use rand::prelude::SliceRandom;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use structopt::StructOpt;
 
 use ccsl::lccsl::algo::generate_combinations;
-use ccsl::lccsl::automata::{
-    StaticBitmapLabel, STS,
-};
+use ccsl::lccsl::automata::label::StaticBitmapLabel;
+use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::constraints::{Causality, Constraint, Delay, Precedence, Union};
 use ccsl::lccsl::gen::{
     cycle_spec, cycle_with_spike, cycle_with_tail, cycle_with_tail_and_spike,
     random_connected_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
 };
 use ccsl::lccsl::opti::{
-    optimize, optimize_by_min_front_init_weights,
-    optimize_by_min_front_with_tricost_root, optimize_by_sort_weights, optimize_by_tree_depth,
-    optimize_by_tree_width,
-    order_by_min_front, order_via_dijkstra, root,
-    root_by_min_outgoing, root_by_tricost,
+    optimize, optimize_by_min_front_init_weights, optimize_by_min_front_with_tricost_root,
+    optimize_by_sort_weights, optimize_by_tree_depth, optimize_by_tree_width, order_by_min_front,
+    order_via_dijkstra, root, root_by_min_outgoing, root_by_tricost,
 };
-use permutation::Permutation;
-use rand::prelude::SliceRandom;
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
-use std::fs::create_dir_all;
 use tool::{
     analyze_specification, analyze_specification_combination, analyze_squish_specification,
     collection, gen_spec, gen_spec_flat, inverse_graph, stream_to_parquet, stream_to_parquet_flat,

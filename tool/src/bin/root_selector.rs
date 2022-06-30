@@ -1,4 +1,5 @@
-use ccsl::lccsl::automata::{StaticBitmapLabel, STS};
+use ccsl::lccsl::automata::label::StaticBitmapLabel;
+use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::gen::random_connected_specification;
 use ccsl::lccsl::opti::{
     optimize_by_min_front_init_weights, optimize_by_min_front_init_weights_root,

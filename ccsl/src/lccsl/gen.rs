@@ -517,24 +517,21 @@ pub fn random_connected_specification(
                 Intersection { out, args: others }.into()
             }
             6 => {
-                let (out, others) =
-                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                let (out, others) = gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
                 Infinity { out, left, right }.into()
             }
             7 => {
-                let (out, others) =
-                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                let (out, others) = gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
                 Supremum { out, left, right }.into()
             }
             8 => {
-                let (out, others) =
-                    gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
+                let (out, others) = gen_expr_clocks(&mut rng, &mut known_clocks, clock_size, true);
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();

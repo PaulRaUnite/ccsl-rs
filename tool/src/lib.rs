@@ -31,7 +31,8 @@ use ccsl::lccsl::algo::{
     approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
     limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::{ClockLabelClassic, Label, STSBuilder, StateRef, STS};
+use ccsl::lccsl::automata::{STSBuilder, StateRef, STS};
+use ccsl::lccsl::automata::label::{Label, ClockLabelClassic};
 use ccsl::lccsl::constraints::{
     Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Infinity, Intersection,
     Precedence, Repeat, SampleOn, Subclocking, Supremum, Union,
