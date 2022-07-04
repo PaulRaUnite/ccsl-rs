@@ -1,21 +1,19 @@
-extern crate arrow;
-extern crate csv;
-extern crate itertools;
-extern crate parquet;
-extern crate rand;
-
-use std::error::Error;
-use std::fs::create_dir_all;
+use anyhow::Result;
+use std::fs::{create_dir, create_dir_all, remove_dir_all, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use itertools::Itertools;
 use permutation::Permutation;
+use polars::io::SerWriter;
+use polars::prelude::{col, CsvWriter, DataType, Expr, IntoLazy, JoinType, LazyFrame};
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 use structopt::StructOpt;
+use walkdir::WalkDir;
 
+use anyhow::Context;
 use ccsl::lccsl::algo::generate_combinations;
 use ccsl::lccsl::automata::label::StaticBitmapLabel;
 use ccsl::lccsl::automata::STS;
@@ -34,22 +32,38 @@ use tool::{
     collection, gen_spec, gen_spec_flat, inverse_graph, stream_to_parquet, stream_to_parquet_flat,
     vec_into_vec,
 };
-
 #[derive(StructOpt, Debug)]
 #[structopt(name = "basic", about = "Processing of LightCCSL constraints")]
 struct Opt {
-    dir: PathBuf,
+    #[structopt(subcommand)]
+    cmd: Cmd,
 }
 
+#[derive(StructOpt, Debug)]
+enum Cmd {
+    Generate {
+        /// Path to a directory to generate data
+        dir: PathBuf,
+    },
+    Analyze {
+        /// Path to a directory to read data
+        dir: PathBuf,
+    },
+}
 //type L = ClockLabelClassic<u32>;
 //type L = RoaringBitmapLabel;
 //type L = StaticBitmapLabel;
 type L = StaticBitmapLabel;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let opt: Opt = Opt::from_args();
+fn main() -> Result<()> {
+    let app: Opt = Opt::from_args();
+    match app.cmd {
+        Cmd::Generate { dir } => generate(&dir),
+        Cmd::Analyze { dir } => analyze(&dir),
+    }
+}
 
-    let data_dir = opt.dir;
+fn generate(data_dir: &Path) -> Result<()> {
     analyse_specs(
         &data_dir.join("circle_tail"),
         gen_spec_flat(3..=4, |size| cycle_with_tail(size)),
@@ -110,7 +124,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             TreeIterator::new(size + 1).map(|tr| to_subclocking_spec(&inverse_graph(tr)))
         }),
     )?;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(12345678);
+    let mut rng = StdRng::seed_from_u64(12345678);
     let mut fixed_specs = Vec::new();
     let mut unfixed_specs = Vec::new();
     for size in 4..=7 {
@@ -144,7 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn analyse_specs<I>(dir: &Path, specs: I) -> Result<(), Box<dyn Error>>
+fn analyse_specs<I>(dir: &Path, specs: I) -> Result<()>
 where
     I: IntoIterator<Item = (u64, Vec<Constraint<usize>>)>,
     I::IntoIter: Clone,
@@ -215,7 +229,7 @@ where
 fn all_optimizations_to_parquet<'a>(
     dir: &Path,
     prepared_specs: impl Iterator<Item = &'a (Vec<Constraint<u32>>, u64)> + Clone,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     create_dir_all(dir)?;
     let optimizers: Vec<(&str, Box<dyn Sync + Fn(&[Constraint<u32>]) -> Permutation>)> = vec![
         (
@@ -584,4 +598,97 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
     .into_iter()
     .enumerate()
     .map(|(i, v)| (i as u64, v))
+}
+
+fn analyze(dir: &Path) -> Result<()> {
+    let reference = LazyFrame::scan_parquet(
+        dir.join("main.parquet").to_str().unwrap().to_string(),
+        Default::default(),
+    )?
+    .groupby([col("spec"), col("variant")])
+    .agg([col("real_tests").max(), col("clocks").max()])
+    .collect()?;
+    let squished_diff = LazyFrame::scan_parquet(
+        dir.join("squished.parquet").to_str().unwrap().to_string(),
+        Default::default(),
+    )?
+    .join(
+        reference.clone().lazy(),
+        [col("spec"), col("variant")],
+        [col("spec"), col("variant")],
+        JoinType::Inner,
+    )
+    .select([
+        col("spec"),
+        col("variant"),
+        col("clocks"),
+        col("approx_tests"),
+        col("limit_tests"),
+        (col("approx_tests").cast(DataType::Int64) - col("real_tests")).alias("approx_diff"),
+        (col("limit_tests").cast(DataType::Int64) - col("real_tests")).alias("limit_diff"),
+    ])
+    .collect()?;
+    let mut squished_stats_by_clocks = squished_diff
+        .lazy()
+        .groupby([col("clocks")])
+        .agg([
+            col("approx_diff").max().alias("approx_max"),
+            col("approx_diff").min().alias("approx_min"),
+            col("approx_diff").mean().alias("approx_mean"),
+            col("limit_diff").max().alias("limit_max"),
+            col("limit_diff").min().alias("limit_min"),
+            col("limit_diff").mean().alias("limit_mean"),
+        ])
+        .collect()?;
+    let output_dir = dir.join("csv");
+    if output_dir.exists() {
+        remove_dir_all(&output_dir)?;
+    }
+    create_dir(&output_dir)?;
+    CsvWriter::new(File::create(output_dir.join("squished.csv"))?)
+        .has_header(true)
+        .finish(&mut squished_stats_by_clocks)?;
+
+    let methods: Vec<(String, LazyFrame)> = WalkDir::new(dir.join("opti"))
+        .into_iter()
+        .filter_ok(|e| e.metadata().map(|m| !m.is_dir()).unwrap_or(true))
+        .map(|e| -> Result<(String, LazyFrame)> {
+            let entry = e?;
+            let filepath = entry.path();
+            let string = filepath.to_str().unwrap().to_string();
+            Ok((
+                filepath.file_name().unwrap().to_str().unwrap().to_string(),
+                LazyFrame::scan_parquet(string.clone(), Default::default())
+                    .with_context(|| format!("File {}", &string))?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    for (filename, df) in methods {
+        let mut df = df
+            .groupby([col("spec")])
+            .agg([col("real_tests").max().alias("optimized")])
+            .join(
+                reference.clone().lazy().groupby([col("spec")]).agg([
+                    col("real_tests").max().alias("max"),
+                    col("real_tests").mean().alias("mean"),
+                    col("real_tests").min().alias("min"),
+                ]),
+                [col("spec")],
+                [col("spec")],
+                JoinType::Left,
+            )
+            .select([
+                col("spec"),
+                ((col("mean") - col("optimized")) / (col("max") - col("min")) * Expr::from(100.0))
+                    .alias("gain"),
+            ])
+            .collect()?;
+        let mut filename = output_dir.join(filename);
+        filename.set_extension("csv");
+        CsvWriter::new(File::create(&filename)?)
+            .has_header(true)
+            .finish(&mut df)?;
+    }
+    Ok(())
 }

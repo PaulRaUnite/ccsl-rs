@@ -12,14 +12,9 @@ Session restart (log out/log in;system restart) may be needed.
 
 ## Optimization experiment
 How to reproduce:
-1. run `main.rs`,
-2. open `plotter/comparison.ipynb` in Jupyter Notebook,
-3. choose a directory with generated data instead of `./data/random/fixed/` or leave it as is,
-4. run the cells
-
-### Note
-Starting from commit `08581730c74f11f14410bddaae3315a59b1f0681`, the app doesn't test some competing algorithms.
-They perform badly and one crashes the generation for some reason.
+1. run `cargo run --release --bin main -- generate ./<path to data>/`,
+2. run `cargo run --release --bin main -- analyze ./<path to data>/<dataset>/`
+3. inspect generated CSV files in `./<path to data>/<dataset>/csv/`
 
 ## LightCCSL specification generator
 

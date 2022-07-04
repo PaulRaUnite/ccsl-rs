@@ -2,7 +2,7 @@
 name = "tool"
 version = "0.1.0"
 authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,3 +20,7 @@ arrow = "17"
 lehmer = "3"
 rand = "0.8"
 permutation = "0.2"
+anyhow = "1"
+polars = { version="0.22.8",features = [ "lazy", "parquet", "csv-file" ] }
+walkdir = "2"
+soa_derive = "0.12.0"

@@ -252,6 +252,7 @@ mod macros {
     }
 }
 
+// TODO: generalize so that static containers can be used
 #[derive(Debug, Clone)]
 pub struct STS<C, L> {
     name: String,
