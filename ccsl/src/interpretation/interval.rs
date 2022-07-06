@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::ops::{Add, Deref, RangeInclusive, Sub};
+use std::ops::{Add, Deref, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
 
 use crate::interpretation::{Lattice, ValueDomain};
 
@@ -116,9 +116,9 @@ impl<T: PartialOrd> PartialOrd for RightBound<T> {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
-enum Interval<T> {
+pub enum Interval<T> {
     #[default]
-    None,
+    Bottom,
     Bound(LeftBound<T>, RightBound<T>),
 }
 
@@ -128,12 +128,12 @@ where
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (Interval::None, Interval::None) => Some(Ordering::Equal),
-            (Interval::None, _) => Some(Ordering::Less),
-            (_, Interval::None) => Some(Ordering::Greater),
+            (Interval::Bottom, Interval::Bottom) => Some(Ordering::Equal),
+            (Interval::Bottom, _) => Some(Ordering::Less),
+            (_, Interval::Bottom) => Some(Ordering::Greater),
             (Interval::Bound(a, b), Interval::Bound(c, d)) => {
-                let inside = a <= c && b <= d;
-                let outside = a >= c && b >= d;
+                let inside = a >= c && b <= d;
+                let outside = a <= c && b >= d;
                 match (inside, outside) {
                     (true, true) => Some(Ordering::Equal),
                     (true, false) => Some(Ordering::Less),
@@ -151,31 +151,30 @@ where
 {
     fn subset(&self, rhs: &Self) -> bool {
         self.partial_cmp(rhs)
-            .map(|c| c == Ordering::Less)
+            .map(|c| c == Ordering::Less || c == Ordering::Equal)
             .unwrap_or(false)
-            || self == rhs
     }
 
     fn union_inplace(&mut self, rhs: &Self) {
         match (self.deref(), rhs) {
-            (_, Interval::None) => {}
+            (_, Interval::Bottom) => {}
             (Interval::Bound(a, b), Interval::Bound(c, d)) => {
-                *self = Interval::Bound(a.min(c).clone(), b.min(d).clone())
+                *self = Interval::Bound(a.min(c).clone(), b.max(d).clone())
             }
-            (Interval::None, _) => *self = rhs.clone(),
+            (Interval::Bottom, _) => *self = rhs.clone(),
         }
     }
 
     fn intersection_inplace(&mut self, rhs: &Self) {
         match (self.deref(), rhs) {
-            (Interval::None, _) | (_, Interval::None) => *self = Interval::None,
+            (Interval::Bottom, _) | (_, Interval::Bottom) => *self = Interval::Bottom,
             (Interval::Bound(a, b), Interval::Bound(c, d)) => {
                 let x = a.max(c);
                 let y = b.min(d);
                 *self = if x <= y {
                     Interval::Bound(x.clone(), y.clone())
                 } else {
-                    Interval::None
+                    Interval::Bottom
                 };
             }
         }
@@ -191,7 +190,7 @@ where
     fn add(self, rhs: Self) -> Self::Output {
         use Interval::*;
         match (self, rhs) {
-            (None, _) | (_, None) => None,
+            (Bottom, _) | (_, Bottom) => Bottom,
             (Bound(a, b), Bound(c, d)) => Bound(a + c, b + d),
         }
     }
@@ -205,7 +204,7 @@ where
     fn sub(self, rhs: Self) -> Self::Output {
         use Interval::*;
         match (self, rhs) {
-            (None, _) | (_, None) => None,
+            (Bottom, _) | (_, Bottom) => Bottom,
             (Bound(a, b), Bound(c, d)) => Bound(a - c, b - d),
         }
     }
@@ -225,10 +224,118 @@ impl<T: Clone> From<RangeInclusive<T>> for Interval<T> {
         )
     }
 }
+impl<T: Clone> From<RangeToInclusive<T>> for Interval<T> {
+    fn from(range: RangeToInclusive<T>) -> Self {
+        Interval::Bound(LeftBound::Infinity, RightBound::Bound(range.end))
+    }
+}
+impl<T: Clone> From<RangeFrom<T>> for Interval<T> {
+    fn from(range: RangeFrom<T>) -> Self {
+        Interval::Bound(LeftBound::Bound(range.start), RightBound::Infinity)
+    }
+}
 
+// TODO: need specialization
+// impl<T> From<RangeFull> for Interval<T> {
+//     fn from(range: RangeFull) -> Self {
+//         Interval::Bound(LeftBound::Infinity, RightBound::Infinity)
+//     }
+// }
+
+impl<T> Interval<T> {
+    const fn top() -> Self {
+        Interval::Bound(LeftBound::Infinity, RightBound::Infinity)
+    }
+
+    const fn bottom() -> Self {
+        Interval::Bottom
+    }
+}
 impl<T> ValueDomain for Interval<T>
 where
     T: Clone + Add<Output = T> + Sub<Output = T> + Ord,
 {
     type C = T;
+}
+
+pub type IntegerInterval = Interval<i64>;
+
+#[cfg(test)]
+mod test {
+    use crate::interpretation::Lattice;
+    use std::cmp::Ordering;
+
+    use super::IntegerInterval;
+
+    #[test]
+    fn test_add_interval() {
+        let a: IntegerInterval = (..=3).into();
+        let b: IntegerInterval = (2..=6).into();
+        let c: IntegerInterval = (5..).into();
+        let d: IntegerInterval = IntegerInterval::top();
+
+        assert_eq!(a + b, (..=9).into());
+        assert_eq!(b + c, (7..).into());
+        assert_eq!(c + d, IntegerInterval::top());
+        assert_eq!(a + d, IntegerInterval::top());
+    }
+    #[test]
+    fn test_sub_interval() {
+        let a: IntegerInterval = (..=3).into();
+        let b: IntegerInterval = (2..=6).into();
+        let c: IntegerInterval = (5..).into();
+        let d: IntegerInterval = IntegerInterval::top();
+
+        assert_eq!(a - b, (..=-3).into());
+        assert_eq!(b - c, (-3..).into());
+        assert_eq!(c - d, IntegerInterval::top());
+        assert_eq!(a - d, IntegerInterval::top());
+    }
+
+    #[test]
+    fn test_subset() {
+        let i11: IntegerInterval = 1.into();
+        let i24: IntegerInterval = (2..=4).into();
+        let i12: IntegerInterval = (1..=2).into();
+        let b: IntegerInterval = IntegerInterval::bottom();
+        let t: IntegerInterval = IntegerInterval::top();
+
+        assert_eq!(b.partial_cmp(&t), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&i11), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&i24), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&i12), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&b), Some(Ordering::Equal));
+
+        assert_eq!(t.partial_cmp(&i11), Some(Ordering::Greater));
+        assert_eq!(t.partial_cmp(&i24), Some(Ordering::Greater));
+        assert_eq!(t.partial_cmp(&i12), Some(Ordering::Greater));
+        assert_eq!(t.partial_cmp(&t), Some(Ordering::Equal));
+
+        assert_eq!(i11.partial_cmp(&i24), None);
+        assert_eq!(i11.partial_cmp(&i12), Some(Ordering::Less));
+
+        assert_eq!(i24.partial_cmp(&i12), None);
+        assert_eq!(i24.partial_cmp(&i24), Some(Ordering::Equal));
+    }
+
+    #[test]
+    fn test_intersection() {
+        let a: IntegerInterval = (2..=5).into();
+        let b: IntegerInterval = (..=3).into();
+        let c: IntegerInterval = (4..).into();
+
+        assert_eq!(a.intersection(&b), (2..=3).into());
+        assert_eq!(a.intersection(&c), (4..=5).into());
+        assert_eq!(b.intersection(&c), IntegerInterval::bottom());
+    }
+    #[test]
+    fn test_union() {
+        let a: IntegerInterval = (2..=5).into();
+        let b: IntegerInterval = (..=3).into();
+        let c: IntegerInterval = (4..).into();
+
+        assert_eq!(a.union(&b), (..=5).into());
+        assert_eq!(a.union(&c), (2..).into());
+        assert_eq!(b.union(&c), IntegerInterval::top());
+    }
 }
