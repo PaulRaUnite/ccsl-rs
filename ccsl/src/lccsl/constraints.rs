@@ -14,6 +14,8 @@ use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 use std::cmp::max;
 use std::ops::BitOr;
+use std::slice::Iter;
+use std::vec::IntoIter;
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Coincidence<C> {
@@ -638,7 +640,7 @@ where
             panic!("cannot represent as STS: repeat conflicts with up_to");
         }
         if c.up_to.is_some() {
-            panic!("up_to is not representable with STS");
+            unimplemented!("difficult to express with automata");
         }
         let start = State::new(0);
         let mut system = STSBuilder::new(&c, start.clone());
@@ -910,5 +912,27 @@ impl<C> Specification<C> {
         B: Ord,
     {
         Specification(self.0.iter().map(move |c| c.map(f)).collect())
+    }
+
+    pub fn iter(&self) -> Iter<'_, Constraint<C>> {
+        self.0.iter()
+    }
+}
+
+impl<C> IntoIterator for Specification<C> {
+    type Item = Constraint<C>;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, C> IntoIterator for &'a Specification<C> {
+    type Item = &'a Constraint<C>;
+    type IntoIter = Iter<'a, Constraint<C>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

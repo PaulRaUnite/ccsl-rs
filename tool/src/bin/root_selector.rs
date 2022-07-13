@@ -1,7 +1,7 @@
 use ccsl::lccsl::automata::label::StaticBitmapLabel;
 use ccsl::lccsl::automata::STS;
-use ccsl::lccsl::gen::random_connected_specification;
-use ccsl::lccsl::opti::{
+use ccsl::lccsl::generation::random_connected_specification;
+use ccsl::lccsl::optimization::{
     optimize_by_min_front_init_weights, optimize_by_min_front_init_weights_root,
 };
 use itertools::Itertools;

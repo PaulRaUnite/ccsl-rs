@@ -21,7 +21,7 @@ use crate::lccsl::algo::{
 };
 use crate::lccsl::automata::label::Label;
 use crate::lccsl::constraints::Constraint;
-use crate::lccsl::opti::root::weights_with_init;
+use crate::lccsl::optimization::root::weights_with_init;
 
 pub fn optimize_by_sort_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where

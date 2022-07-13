@@ -32,7 +32,7 @@ mod tests {
         Causality, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
         Subclocking, Supremum, Union,
     };
-    use crate::lccsl::gen::random_connected_specification;
+    use crate::lccsl::generation::random_connected_specification;
     use crate::lccsl::parser::parse_raw;
 
     #[test]

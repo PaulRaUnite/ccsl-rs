@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 pub mod label;
 
-pub trait Guard<D> {
-    fn eval<'a>(&'a self, state: &'a dyn Index<&'a D, Output = i64>) -> bool;
+pub trait Guard<V, C> {
+    fn eval<'a>(&'a self, state: &'a dyn Index<&'a V, Output = C>) -> bool;
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]

@@ -9,7 +9,7 @@ use rayon::prelude::{ParallelBridge, ParallelIterator};
 use structopt::StructOpt;
 
 use ccsl::lccsl::format::to_lccsl;
-use ccsl::lccsl::gen::random_connected_specification;
+use ccsl::lccsl::generation::random_connected_specification;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "lccsl-gen", about = "LightCCSL specification generator")]

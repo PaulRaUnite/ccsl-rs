@@ -15,15 +15,18 @@ pub mod lccsl {
 
     pub mod expressions;
 
+    // TODO: rename the module and functions in it
     pub mod algo;
 
     pub mod vizualization;
 
-    pub mod gen;
+    pub mod generation;
 
-    pub mod opti;
+    pub mod optimization;
 
     pub mod format;
+
+    pub mod analysis;
 }
 
-pub(crate) mod interpretation;
+pub mod interpretation;

@@ -1,6 +1,6 @@
 use std::ops::{Add, RangeInclusive, Sub};
 
-trait Lattice: PartialOrd + Clone {
+pub trait Lattice: PartialOrd + Clone {
     fn subset(&self, rhs: &Self) -> bool;
     fn union(&self, rhs: &Self) -> Self {
         let mut result = self.clone();
@@ -16,8 +16,18 @@ trait Lattice: PartialOrd + Clone {
     fn intersection_inplace(&mut self, rhs: &Self);
 }
 
-trait ValueDomain: Lattice + Add + Sub + From<Self::C> + From<RangeInclusive<Self::C>> {
+pub trait ValueDomain: Lattice + Add + Sub + From<Self::C> + From<RangeInclusive<Self::C>> {
     type C;
 }
 
 pub(crate) mod interval;
+
+pub trait Widening {
+    type Domain;
+    fn widen(prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
+}
+
+pub trait Narrowing {
+    type Domain;
+    fn narrow(prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
+}
