@@ -4,12 +4,12 @@ use std::ops::{Add, Deref, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
 use crate::interpretation::{Lattice, ValueDomain};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum LeftBound<T> {
+pub enum LeftBound<T> {
     Infinity,
     Bound(T),
 }
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum RightBound<T> {
+pub enum RightBound<T> {
     Infinity,
     Bound(T),
 }

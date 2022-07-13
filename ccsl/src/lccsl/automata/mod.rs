@@ -4,7 +4,7 @@ use label::*;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::{once, FromIterator};
 use std::ops::{BitOr, Index, Range};
@@ -12,8 +12,12 @@ use std::sync::Arc;
 
 pub mod label;
 
-pub trait Guard<V, C> {
-    fn eval<'a>(&'a self, state: &'a dyn Index<&'a V, Output = C>) -> bool;
+pub trait Stack<'a, VI: 'a, VB: 'a, C>:
+    Index<&'a VI, Output = C> + Index<&'a VB, Output = bool>
+{
+}
+pub trait Guard<'a, VI: 'a, VB: 'a, C> {
+    fn eval<S: Stack<'a, VI, VB, C>>(&'a self, state: &S) -> bool;
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -24,10 +28,20 @@ impl<C: fmt::Display> fmt::Display for Delta<C> {
         write!(f, "δ({}, {})", self.0, self.1)
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Nothing;
+
+impl Display for Nothing {
+    fn fmt(&self, _: &mut Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct State<C> {
     pub id: usize,
-    pub invariant: Option<Arc<BooleanExpression<Delta<C>>>>,
+    pub invariant: Option<Arc<BooleanExpression<Delta<C>, Nothing>>>,
 }
 
 impl<C> Clone for State<C> {
@@ -83,7 +97,7 @@ impl<C> State<C> {
             invariant: None,
         }
     }
-    pub fn with_invariant(self, guard: BooleanExpression<Delta<C>>) -> Self {
+    pub fn with_invariant(self, guard: BooleanExpression<Delta<C>, Nothing>) -> Self {
         Self {
             id: self.id,
             invariant: Some(Arc::new(guard)),
@@ -112,7 +126,7 @@ mod tests {
     }
 }
 
-pub type Expr<C> = BooleanExpression<Delta<C>>;
+pub type Expr<C> = BooleanExpression<Delta<C>, Nothing>;
 
 #[derive(Debug, Clone)]
 pub struct STSBuilder<C> {

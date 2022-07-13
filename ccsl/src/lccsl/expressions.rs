@@ -1,4 +1,4 @@
-use crate::lccsl::automata::Guard;
+use crate::lccsl::automata::{Guard, Stack};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Index, Mul, Not, Sub};
@@ -82,11 +82,11 @@ impl<V, C> From<C> for IntegerExpression<V, C> {
     }
 }
 
-impl<V, C> IntegerExpression<V, C>
+impl<'a, VI: 'a, C> IntegerExpression<VI, C>
 where
-    C: Clone + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
+    C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
 {
-    fn eval<'a>(&'a self, state: &'a dyn Index<&'a V, Output = C>) -> C {
+    fn eval(&'a self, state: &impl Index<&'a VI, Output = C>) -> C {
         match &self {
             IntegerExpression::Variable(v) => state[v].clone(),
             IntegerExpression::Constant(c) => c.clone(),
@@ -106,19 +106,19 @@ impl<V, C> IntegerExpression<V, C>
 where
     C: Clone,
 {
-    pub fn var(v: V) -> Self {
-        IntegerExpression::Variable(v)
+    pub fn var(v: impl Into<V>) -> Self {
+        IntegerExpression::Variable(v.into())
     }
 
-    pub fn fixed(c: C) -> Self {
-        IntegerExpression::Constant(c)
+    pub fn fixed(c: impl Into<C>) -> Self {
+        IntegerExpression::Constant(c.into())
     }
 
-    fn cmp(
+    fn cmp<VB>(
         kind: IntegerComparisonKind,
         left: IntegerExpression<V, C>,
         right: IntegerExpression<V, C>,
-    ) -> BooleanExpression<V, C> {
+    ) -> BooleanExpression<V, VB, C> {
         BooleanExpression::IntegerBinary {
             kind,
             left: left.into(),
@@ -127,20 +127,20 @@ where
     }
 }
 
-impl<V: Clone, C: Clone> IntegerExpression<V, C> {
-    pub fn eq(&self, rhs: impl Into<Self>) -> BooleanExpression<V, C> {
+impl<VI: Clone, C: Clone> IntegerExpression<VI, C> {
+    pub fn eq<VB>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C> {
         IntegerExpression::cmp(IntegerComparisonKind::Equal, self.clone(), rhs.into())
     }
-    pub fn less(&self, rhs: impl Into<Self>) -> BooleanExpression<V, C> {
+    pub fn less<VB>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C> {
         IntegerExpression::cmp(IntegerComparisonKind::Less, self.clone(), rhs.into())
     }
-    pub fn less_eq(&self, rhs: impl Into<Self>) -> BooleanExpression<V, C> {
+    pub fn less_eq<VB>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C> {
         IntegerExpression::cmp(IntegerComparisonKind::LessEq, self.clone(), rhs.into())
     }
-    pub fn more(&self, rhs: impl Into<Self>) -> BooleanExpression<V, C> {
+    pub fn more<VB>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C> {
         IntegerExpression::cmp(IntegerComparisonKind::More, self.clone(), rhs.into())
     }
-    pub fn more_eq(&self, rhs: impl Into<Self>) -> BooleanExpression<V, C> {
+    pub fn more_eq<VB>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C> {
         IntegerExpression::cmp(IntegerComparisonKind::MoreEq, self.clone(), rhs.into())
     }
 }
@@ -162,22 +162,23 @@ pub enum BooleanComparisonKind {
 }
 
 #[derive(Debug, Clone)]
-pub enum BooleanExpression<V, C = i64> {
+pub enum BooleanExpression<VI, VB, C = i64> {
     IntegerBinary {
         kind: IntegerComparisonKind,
-        left: Box<IntegerExpression<V, C>>,
-        right: Box<IntegerExpression<V, C>>,
+        left: Box<IntegerExpression<VI, C>>,
+        right: Box<IntegerExpression<VI, C>>,
     },
     BooleanBinary {
         kind: BooleanComparisonKind,
-        left: Box<BooleanExpression<V, C>>,
-        right: Box<BooleanExpression<V, C>>,
+        left: Box<BooleanExpression<VI, VB, C>>,
+        right: Box<BooleanExpression<VI, VB, C>>,
     },
-    Not(Box<BooleanExpression<V, C>>),
+    Not(Box<BooleanExpression<VI, VB, C>>),
     Constant(bool),
+    Variable(VB),
 }
 
-impl<V: Display, C: Display> Display for BooleanExpression<V, C> {
+impl<VI: Display, VB: Display, C: Display> Display for BooleanExpression<VI, VB, C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             BooleanExpression::IntegerBinary { kind, left, right } => {
@@ -200,18 +201,17 @@ impl<V: Display, C: Display> Display for BooleanExpression<V, C> {
                 write!(f, "{} {} {}", left, sign, right)
             }
             BooleanExpression::Not(exp) => write!(f, "!{}", exp),
-            BooleanExpression::Constant(b) => {
-                write!(f, "{}", b)
-            }
+            BooleanExpression::Constant(b) => write!(f, "{}", b),
+            BooleanExpression::Variable(v) => write!(f, "{}", v),
         }
     }
 }
 
-impl<V, C> Guard<V, C> for BooleanExpression<V, C>
+impl<'a, VI: 'a, VB: 'a, C> Guard<'a, VI, VB, C> for BooleanExpression<VI, VB, C>
 where
     C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
 {
-    fn eval<'a>(&'a self, state: &'a dyn Index<&'a V, Output = C>) -> bool {
+    fn eval<S: Stack<'a, VI, VB, C>>(&'a self, state: &S) -> bool {
         match &self {
             BooleanExpression::IntegerBinary { kind, left, right } => {
                 let left = left.eval(state);
@@ -236,11 +236,12 @@ where
             }
             BooleanExpression::Not(e) => !e.eval(state),
             BooleanExpression::Constant(b) => *b,
+            BooleanExpression::Variable(v) => state[v].clone(),
         }
     }
 }
 
-impl<V, C> BitOr for BooleanExpression<V, C> {
+impl<VI, VB, C> BitOr for BooleanExpression<VI, VB, C> {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -252,7 +253,7 @@ impl<V, C> BitOr for BooleanExpression<V, C> {
     }
 }
 
-impl<V, C> BitAnd for BooleanExpression<V, C> {
+impl<VI, VB, C> BitAnd for BooleanExpression<VI, VB, C> {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self::Output {
@@ -264,7 +265,7 @@ impl<V, C> BitAnd for BooleanExpression<V, C> {
     }
 }
 
-impl<V, C> BitXor for BooleanExpression<V, C> {
+impl<VI, VB, C> BitXor for BooleanExpression<VI, VB, C> {
     type Output = Self;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
@@ -276,7 +277,7 @@ impl<V, C> BitXor for BooleanExpression<V, C> {
     }
 }
 
-impl<V, C> Not for BooleanExpression<V, C> {
+impl<VI, VB, C> Not for BooleanExpression<VI, VB, C> {
     type Output = Self;
 
     fn not(self) -> Self::Output {
@@ -284,27 +285,34 @@ impl<V, C> Not for BooleanExpression<V, C> {
     }
 }
 
-impl<V, C> Default for BooleanExpression<V, C> {
+impl<VI, VB, C> Default for BooleanExpression<VI, VB, C> {
     fn default() -> Self {
         BooleanExpression::Constant(true)
     }
 }
 
-impl<V, C> BooleanExpression<V, C> {
-    pub fn implies(self, other: BooleanExpression<V, C>) -> BooleanExpression<V, C> {
+impl<VI, VB, C> BooleanExpression<VI, VB, C> {
+    pub fn implies(self, other: BooleanExpression<VI, VB, C>) -> BooleanExpression<VI, VB, C> {
         !self | other
     }
 
-    pub fn strictly_implies(self, other: BooleanExpression<V, C>) -> BooleanExpression<V, C> {
+    pub fn strictly_implies(
+        self,
+        other: BooleanExpression<VI, VB, C>,
+    ) -> BooleanExpression<VI, VB, C> {
         self & other
     }
 
-    pub fn eq(self, other: BooleanExpression<V, C>) -> BooleanExpression<V, C> {
+    pub fn eq(self, other: BooleanExpression<VI, VB, C>) -> BooleanExpression<VI, VB, C> {
         BooleanExpression::BooleanBinary {
             kind: BooleanComparisonKind::Eq,
             left: self.into(),
             right: other.into(),
         }
+    }
+
+    pub fn var(v: impl Into<VB>) -> BooleanExpression<VI, VB, C> {
+        BooleanExpression::Variable(v.into())
     }
 }
 
@@ -347,9 +355,7 @@ where
 {
     pub fn leaves(&self, variables: &mut Vec<V>, constants: &mut Vec<C>) {
         match self {
-            IntegerExpression::Variable(v) => {
-                variables.push(v.clone());
-            }
+            IntegerExpression::Variable(v) => variables.push(v.clone()),
             IntegerExpression::Constant(c) => constants.push(c.clone()),
             IntegerExpression::IntegerBinary { left, right, .. } => {
                 left.leaves(variables, constants);
@@ -359,27 +365,31 @@ where
     }
 }
 
-impl<V, C> BooleanExpression<V, C>
+impl<VI, VB, C> BooleanExpression<VI, VB, C>
 where
-    V: Clone,
+    VI: Clone,
+    VB: Clone,
     C: Clone,
 {
-    pub fn leaves(&self, variables: &mut Vec<V>, integers: &mut Vec<C>, booleans: &mut Vec<bool>) {
+    pub fn leaves(
+        &self,
+        int_var: &mut Vec<VI>,
+        bool_var: &mut Vec<VB>,
+        integers: &mut Vec<C>,
+        booleans: &mut Vec<bool>,
+    ) {
         match self {
             BooleanExpression::IntegerBinary { left, right, .. } => {
-                left.leaves(variables, integers);
-                right.leaves(variables, integers);
+                left.leaves(int_var, integers);
+                right.leaves(int_var, integers);
             }
             BooleanExpression::BooleanBinary { left, right, .. } => {
-                left.leaves(variables, integers, booleans);
-                right.leaves(variables, integers, booleans);
+                left.leaves(int_var, bool_var, integers, booleans);
+                right.leaves(int_var, bool_var, integers, booleans);
             }
-            BooleanExpression::Not(expr) => {
-                expr.leaves(variables, integers, booleans);
-            }
-            BooleanExpression::Constant(c) => {
-                booleans.push(*c);
-            }
+            BooleanExpression::Not(expr) => expr.leaves(int_var, bool_var, integers, booleans),
+            BooleanExpression::Constant(c) => booleans.push(*c),
+            BooleanExpression::Variable(v) => bool_var.push(v.clone()),
         }
     }
 }
