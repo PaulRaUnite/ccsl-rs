@@ -9,6 +9,7 @@ use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
 use derive_more::From;
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
 use std::hash::Hash;
 
 #[derive(Debug, Clone, Default)]
@@ -45,7 +46,15 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
             invariants.push(invariant);
         }
         ProgramEffects {
-            clocks: clocks.into_iter().unique().collect(),
+            clocks: clocks
+                .into_iter()
+                .chain(
+                    counters
+                        .iter()
+                        .flat_map(|c| [c.0.clone(), c.1.clone()].into_iter()),
+                )
+                .unique()
+                .collect(),
             counters: counters.into_iter().unique().collect(),
             invariant: invariants.into_iter().map(|i| i.0).reduce(|x, y| x & y),
         }
@@ -66,7 +75,7 @@ impl<C: Clone> From<&'_ Precedence<C>> for Invariant<C> {
     fn from(c: &'_ Precedence<C>) -> Self {
         let ab = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let b = BooleanExpression::var(c.right.clone());
-        ab.eq(0).implies(b).into()
+        (ab.more_eq(0) & ab.eq(0).implies(!b)).into()
     }
 }
 
@@ -94,12 +103,12 @@ impl<C: Clone> From<&'_ Exclusion<C>> for Invariant<C> {
     }
 }
 impl<C: Clone> From<&'_ Infinity<C>> for Invariant<C> {
-    fn from(c: &'_ Infinity<C>) -> Self {
+    fn from(_: &'_ Infinity<C>) -> Self {
         unimplemented!()
     }
 }
 impl<C: Clone> From<&'_ Supremum<C>> for Invariant<C> {
-    fn from(c: &'_ Supremum<C>) -> Self {
+    fn from(_: &'_ Supremum<C>) -> Self {
         unimplemented!()
     }
 }
@@ -110,7 +119,7 @@ impl<C: Clone> From<&'_ Union<C>> for Invariant<C> {
             .cloned()
             .map(BooleanExpression::var)
             .reduce(|x, y| x | y)
-            .map(|e| e.strictly_implies(BooleanExpression::var(c.out.clone())))
+            .map(|e| e.eq(BooleanExpression::var(c.out.clone())))
             .unwrap()
             .into()
     }
@@ -122,7 +131,7 @@ impl<C: Clone> From<&'_ Intersection<C>> for Invariant<C> {
             .cloned()
             .map(BooleanExpression::var)
             .reduce(|x, y| x & y)
-            .map(|e| e.strictly_implies(BooleanExpression::var(c.out.clone())))
+            .map(|e| e.eq(BooleanExpression::var(c.out.clone())))
             .unwrap()
             .into()
     }
@@ -137,7 +146,7 @@ impl<C: Clone> From<&'_ Minus<C>> for Invariant<C> {
 }
 
 impl<C: Clone> From<&'_ Repeat<C>> for Invariant<C> {
-    fn from(c: &'_ Repeat<C>) -> Self {
+    fn from(_: &'_ Repeat<C>) -> Self {
         unimplemented!()
     }
 }
@@ -156,12 +165,49 @@ impl<C: Clone> From<&'_ Delay<C>> for Invariant<C> {
     }
 }
 impl<C: Clone> From<&'_ SampleOn<C>> for Invariant<C> {
-    fn from(c: &'_ SampleOn<C>) -> Self {
+    fn from(_: &'_ SampleOn<C>) -> Self {
         unimplemented!()
     }
 }
 impl<C: Clone> From<&'_ Diff<C>> for Invariant<C> {
-    fn from(c: &'_ Diff<C>) -> Self {
+    fn from(_: &'_ Diff<C>) -> Self {
         unimplemented!()
     }
 }
+
+impl<C: Ord + Clone + Debug> Invariant<C> {
+    pub(crate) fn check<const N: usize>(&self, traces: BTreeMap<C, [u8; N]>) -> bool {
+        let mut counters = vec![];
+        let mut clocks = vec![];
+        self.0
+            .leaves(&mut counters, &mut clocks, &mut vec![], &mut vec![]);
+        for c in clocks.iter() {
+            if !traces.contains_key(c) {
+                panic!("trace for clock {:?} is not supplied", c)
+            }
+        }
+        let mut counters: BTreeMap<Delta<C>, i64> = counters.into_iter().map(|c| (c, 0)).collect();
+        for i in 0..N {
+            for j in 0..8 {
+                if !self
+                    .0
+                    .eval(&|c| counters[c], &|c| (traces[c][i] & 1 << j) != 0)
+                {
+                    dbg!(&traces, i, j, &counters);
+                    return false;
+                }
+                for (k, v) in &mut counters {
+                    let a = ((traces[&k.0][i] & 1 << j) != 0) as i64;
+                    let b = ((traces[&k.1][i] & 1 << j) != 0) as i64;
+                    *v += a;
+                    *v -= b;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+#[cfg(test)]
+mod test;

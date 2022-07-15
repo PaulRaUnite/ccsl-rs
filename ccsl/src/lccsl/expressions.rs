@@ -1,7 +1,6 @@
-use crate::lccsl::automata::{Guard, Stack};
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, BitAnd, BitOr, BitXor, Index, Mul, Not, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Mul, Not, Sub};
 use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone)]
@@ -86,13 +85,13 @@ impl<'a, VI: 'a, C> IntegerExpression<VI, C>
 where
     C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
 {
-    fn eval(&'a self, state: &impl Index<&'a VI, Output = C>) -> C {
+    fn eval(&'a self, int_state: &impl Fn(&VI) -> C) -> C {
         match &self {
-            IntegerExpression::Variable(v) => state[v].clone(),
+            IntegerExpression::Variable(v) => int_state(v),
             IntegerExpression::Constant(c) => c.clone(),
             IntegerExpression::IntegerBinary { kind, left, right } => {
-                let left = left.eval(state);
-                let right = right.eval(state);
+                let left = left.eval(int_state);
+                let right = right.eval(int_state);
                 match &kind {
                     IntegerArithmeticsKind::Add => left + right,
                     IntegerArithmeticsKind::Sub => left - right,
@@ -207,15 +206,15 @@ impl<VI: Display, VB: Display, C: Display> Display for BooleanExpression<VI, VB,
     }
 }
 
-impl<'a, VI: 'a, VB: 'a, C> Guard<'a, VI, VB, C> for BooleanExpression<VI, VB, C>
+impl<VI, VB, C> BooleanExpression<VI, VB, C>
 where
     C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
 {
-    fn eval<S: Stack<'a, VI, VB, C>>(&'a self, state: &S) -> bool {
+    pub fn eval(&self, int_state: &impl Fn(&VI) -> C, bool_state: &impl Fn(&VB) -> bool) -> bool {
         match &self {
             BooleanExpression::IntegerBinary { kind, left, right } => {
-                let left = left.eval(state);
-                let right = right.eval(state);
+                let left = left.eval(int_state);
+                let right = right.eval(int_state);
                 match &kind {
                     IntegerComparisonKind::Equal => left == right,
                     IntegerComparisonKind::Less => left < right,
@@ -225,8 +224,8 @@ where
                 }
             }
             BooleanExpression::BooleanBinary { kind, left, right } => {
-                let left = left.eval(state);
-                let right = right.eval(state);
+                let left = left.eval(int_state, bool_state);
+                let right = right.eval(int_state, bool_state);
                 match &kind {
                     BooleanComparisonKind::And => left && right,
                     BooleanComparisonKind::Or => left || right,
@@ -234,9 +233,9 @@ where
                     BooleanComparisonKind::Eq => left == right,
                 }
             }
-            BooleanExpression::Not(e) => !e.eval(state),
+            BooleanExpression::Not(e) => !e.eval(int_state, bool_state),
             BooleanExpression::Constant(b) => *b,
-            BooleanExpression::Variable(v) => state[v].clone(),
+            BooleanExpression::Variable(v) => bool_state(v),
         }
     }
 }

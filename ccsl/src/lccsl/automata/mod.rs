@@ -7,23 +7,15 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::{once, FromIterator};
-use std::ops::{BitOr, Index, Range};
+use std::ops::{BitOr, Range};
 use std::sync::Arc;
 
 pub mod label;
 
-pub trait Stack<'a, VI: 'a, VB: 'a, C>:
-    Index<&'a VI, Output = C> + Index<&'a VB, Output = bool>
-{
-}
-pub trait Guard<'a, VI: 'a, VB: 'a, C> {
-    fn eval<S: Stack<'a, VI, VB, C>>(&'a self, state: &S) -> bool;
-}
-
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub struct Delta<C>(pub C, pub C);
 
-impl<C: fmt::Display> fmt::Display for Delta<C> {
+impl<C: Display> Display for Delta<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "δ({}, {})", self.0, self.1)
     }
@@ -79,7 +71,7 @@ impl<C> Hash for State<C> {
 
 impl<C> Eq for State<C> {}
 
-impl<C: fmt::Display> fmt::Display for State<C> {
+impl<C: Display> Display for State<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.id)?;
         if let Some(g) = &self.invariant {
@@ -112,7 +104,7 @@ pub struct MergedTransition<'a, C, L> {
     pub switch: &'a Switch<Expr<C>, State<C>>,
 }
 
-impl<C, L: fmt::Display> fmt::Display for MergedTransition<'_, C, L> {
+impl<C, L: Display> Display for MergedTransition<'_, C, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.label)
     }
@@ -221,7 +213,7 @@ where
     }
 }
 
-impl<C> fmt::Display for STSBuilder<C> {
+impl<C> Display for STSBuilder<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
@@ -392,7 +384,7 @@ impl<C, L: Clone + Hash + Eq> STS<C, L> {
     }
 }
 
-impl<C, L> fmt::Display for STS<C, L> {
+impl<C, L> Display for STS<C, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
