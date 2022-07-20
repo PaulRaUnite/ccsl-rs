@@ -1,6 +1,6 @@
 use crate::interpretation::{Lattice, ValueDomain};
 use std::cmp::Ordering;
-use std::ops::Deref;
+use std::ops::{Deref, Not};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Bool {
@@ -66,4 +66,18 @@ impl From<bool> for Bool {
 
 impl ValueDomain for Bool {
     type C = bool;
+}
+
+// TODO: maybe should rename it into complement, because it is one
+impl Not for Bool {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Bool::Neither => Bool::Both,
+            Bool::True => Bool::False,
+            Bool::False => Bool::True,
+            Bool::Both => Bool::Neither,
+        }
+    }
 }

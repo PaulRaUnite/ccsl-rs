@@ -30,3 +30,22 @@ pub trait Narrowing {
     type Domain;
     fn narrow(prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
 }
+
+pub trait Succ {
+    fn succ(&self) -> Self;
+}
+
+pub trait Prec {
+    fn prec(&self) -> Self;
+}
+impl Succ for i64 {
+    fn succ(&self) -> Self {
+        *self + 1
+    }
+}
+
+impl Prec for i64 {
+    fn prec(&self) -> Self {
+        *self - 1
+    }
+}

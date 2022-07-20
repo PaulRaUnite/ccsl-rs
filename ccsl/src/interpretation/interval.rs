@@ -1,7 +1,7 @@
+use crate::interpretation::boolean::Bool;
+use crate::interpretation::{Lattice, Prec, Succ, ValueDomain};
 use std::cmp::Ordering;
-use std::ops::{Add, Deref, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
-
-use crate::interpretation::{Lattice, ValueDomain};
+use std::ops::{Add, Deref, Not, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum LeftBound<T> {
@@ -256,6 +256,36 @@ where
     T: Clone + Add<Output = T> + Sub<Output = T> + Ord,
 {
     type C = T;
+}
+
+impl<T: Succ + Prec> Not for Interval<T> {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Interval::Bottom | Interval::Bound(LeftBound::Bound(_), RightBound::Bound(_)) => {
+                Interval::top()
+            }
+            Interval::Bound(LeftBound::Bound(left), RightBound::Infinity) => {
+                Interval::Bound(LeftBound::Infinity, RightBound::Bound(left.prec()))
+            }
+            Interval::Bound(LeftBound::Infinity, RightBound::Bound(right)) => {
+                Interval::Bound(LeftBound::Bound(right.succ()), RightBound::Infinity)
+            }
+            Interval::Bound(LeftBound::Infinity, RightBound::Infinity) => Interval::bottom(),
+        }
+    }
+}
+
+impl From<Bool> for Interval<i64> {
+    fn from(b: Bool) -> Self {
+        match b {
+            Bool::Neither => Interval::bottom(),
+            Bool::True => 1.into(),
+            Bool::False => 0.into(),
+            Bool::Both => (0..=1).into(),
+        }
+    }
 }
 
 pub type IntegerInterval = Interval<i64>;
