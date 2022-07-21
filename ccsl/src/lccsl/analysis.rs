@@ -13,7 +13,7 @@ use derive_more::From;
 use itertools::Itertools;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr, Deref, Not};
 
@@ -73,7 +73,7 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
 }
 
 #[derive(Debug, Clone, From)]
-struct Invariant<C>(BooleanExpression<Delta<C>, C>);
+pub struct Invariant<C>(pub BooleanExpression<Delta<C>, C>);
 
 impl<C: Clone> From<&'_ Causality<C>> for Invariant<C> {
     fn from(c: &'_ Causality<C>) -> Self {
@@ -167,12 +167,7 @@ impl<C: Clone> From<&'_ Delay<C>> for Invariant<C> {
         let a = BooleanExpression::var(c.base.clone());
         let b = BooleanExpression::var(c.out.clone());
         let d = c.delay as i64;
-        Invariant(
-            ab.less_eq(d)
-                & ab.more_eq(0)
-                & ab.eq(d).implies(a.eq(b.clone()))
-                & ab.less(d).implies(!b),
-        )
+        Invariant(ab.more_eq(0) & ((ab.eq(d) & a.eq(b.clone())) | (ab.less(d) & !b)))
     }
 }
 impl<C: Clone> From<&'_ SampleOn<C>> for Invariant<C> {
@@ -223,7 +218,7 @@ impl<C: Ord + Clone + Debug> Invariant<C> {
 mod test;
 
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
-enum Step {
+pub enum Step {
     #[default]
     Init,
     LoopHead,
@@ -239,6 +234,19 @@ pub struct ExecutionState<C> {
     booleans: BTreeMap<C, Bool>,
 }
 
+impl<C: Display> Display for ExecutionState<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for (k, v) in &self.integers {
+            write!(f, "{}: {}, ", k, v)?;
+        }
+        for (k, v) in &self.booleans {
+            write!(f, "{}: {}, ", k, v)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl<C> ExecutionState<C> {
     fn new() -> Self {
         Self {
@@ -248,9 +256,9 @@ impl<C> ExecutionState<C> {
     }
 }
 
-fn execute<C>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
+pub fn execute<C>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
 where
-    C: Ord + Hash + Clone,
+    C: Ord + Hash + Clone + Display,
 {
     let program: ProgramEffects<C> = spec.into();
     let (pos, neg) = program.invariant.abstractify();
@@ -330,18 +338,22 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
 
 pub fn stop_condition<C>(spec: &Specification<C>) -> ExecutionState<C>
 where
-    C: Clone + Ord + Hash,
+    C: Clone + Ord + Hash + Display,
 {
     execute(spec).get(&Step::Exit).unwrap().clone()
 }
 
-impl<C: Ord + Clone> Invariant<C> {
+impl<C: Ord + Clone + Display> Invariant<C> {
     fn abstractify(&self) -> (ExecutionState<C>, ExecutionState<C>) {
         (assume(&self.0, true), assume(&self.0, false))
     }
 }
 
-fn assume<C: Ord + Clone>(e: &BooleanExpression<Delta<C>, C>, value: bool) -> ExecutionState<C> {
+// TODO: check the correctness
+pub fn assume<C: Ord + Clone + Display>(
+    e: &BooleanExpression<Delta<C>, C>,
+    value: bool,
+) -> ExecutionState<C> {
     match e {
         BooleanExpression::IntegerBinary { kind, left, right } => {
             let (kind, v, c) = match (&left.deref(), &right.deref()) {
@@ -364,31 +376,29 @@ fn assume<C: Ord + Clone>(e: &BooleanExpression<Delta<C>, C>, value: bool) -> Ex
         }
         BooleanExpression::BooleanBinary { kind, left, right } => match kind {
             BooleanComparisonKind::And => {
-                let res = assume(&left, true) & assume(&right, true);
-                if !value {
-                    !res
+                if value {
+                    assume(left, true) & assume(right, true)
                 } else {
-                    res
+                    assume(left, false) | assume(right, false) //??
                 }
             }
             BooleanComparisonKind::Or => {
-                let res = assume(&left, false) | assume(&right, false);
                 if value {
-                    !res
+                    assume(left, true) | assume(right, true)
                 } else {
-                    res
+                    assume(left, false) & assume(right, false) //??
                 }
             }
             BooleanComparisonKind::Xor => {
-                (assume(&left, true) & assume(&right, false))
-                    | (assume(&left, false) & assume(&right, true))
+                (assume(left, true) & assume(right, false))
+                    | (assume(left, false) & assume(right, true))
             }
             BooleanComparisonKind::Eq => {
-                (assume(&left, true) & assume(&right, true))
-                    | (assume(&left, false) & assume(&right, false))
+                (assume(left, true) & assume(right, true))
+                    | (assume(left, false) & assume(right, false))
             }
         },
-        BooleanExpression::Not(e) => assume(&e, !value),
+        BooleanExpression::Not(e) => assume(e, !value),
         BooleanExpression::Constant(_) => panic!("should not be present"),
         BooleanExpression::Variable(v) => {
             let mut s = ExecutionState::new();

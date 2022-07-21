@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -10,6 +9,8 @@ use structopt::StructOpt;
 
 use ccsl::lccsl::format::to_lccsl;
 use ccsl::lccsl::generation::random_connected_specification;
+
+use anyhow::{anyhow, Result};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "lccsl-gen", about = "LightCCSL specification generator")]
@@ -54,18 +55,14 @@ enum Cmd {
     },
 }
 
-fn generate_spec(dir: &Path, seed: u64, size: usize) -> Result<(), Box<dyn Error + Sync + Send>> {
+fn generate_spec(dir: &Path, seed: u64, size: usize) -> Result<()> {
     let filename = format!("{}-{}", size, seed);
     let filepath = dir.join(&filename).with_extension("lc");
     let file = BufWriter::new(OpenOptions::new().write(true).create(true).open(filepath)?);
     write_spec(file, seed, size)
 }
 
-fn write_spec(
-    mut w: impl Write,
-    seed: u64,
-    size: usize,
-) -> Result<(), Box<dyn Error + Sync + Send>> {
+fn write_spec(mut w: impl Write, seed: u64, size: usize) -> Result<()> {
     let spec_name = format!("spec_{}_{}", size, seed);
     let spec = random_connected_specification(seed, size, true)
         .into_iter()
@@ -75,11 +72,8 @@ fn write_spec(
     Ok(())
 }
 
-fn generate_dir(
-    dir: &Path,
-    specs: impl Iterator<Item = (u64, usize)> + Send,
-) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let mut results: Vec<Result<(), Box<dyn Error + Sync + Send>>> = specs
+fn generate_dir(dir: &Path, specs: impl Iterator<Item = (u64, usize)> + Send) -> Result<()> {
+    let mut results: Vec<Result<()>> = specs
         .par_bridge() // PARALLELIZATION HAPPEN HERE
         .map(|(seed, size)| generate_spec(&dir, seed, size))
         .filter(|r| r.is_err())
@@ -91,7 +85,7 @@ fn generate_dir(
     }
 }
 
-fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
+fn main() -> Result<()> {
     let app: App = App::from_args();
 
     match app.cmd {
@@ -104,8 +98,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
         } => {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             if !dir.exists() {
-                eprintln!("Specified directory doesn't exist");
-                return Ok(());
+                return Err(anyhow!("Specified directory doesn't exist"));
             }
             let dir = if flatten {
                 dir

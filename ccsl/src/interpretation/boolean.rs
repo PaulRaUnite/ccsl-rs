@@ -1,5 +1,6 @@
 use crate::interpretation::{Lattice, ValueDomain};
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, Not};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -24,10 +25,11 @@ impl Lattice for Bool {
     }
 
     fn union_inplace(&mut self, rhs: &Self) {
-        match (self.deref(), rhs) {
-            (Bool::Neither, other) | (other, Bool::Neither) => *self = *other,
+        match (*self, *rhs) {
+            (Bool::Neither, other) | (other, Bool::Neither) => *self = other,
             (Bool::True, Bool::False) | (Bool::False, Bool::True) => *self = Bool::Both,
             (Bool::Both, _) | (_, Bool::Both) => *self = Bool::Both,
+            (Bool::True, Bool::True) | (Bool::False, Bool::False) => {}
         }
     }
 
@@ -36,6 +38,7 @@ impl Lattice for Bool {
             (Bool::Neither, _) | (_, Bool::Neither) => *self = Bool::Neither,
             (Bool::True, Bool::False) | (Bool::False, Bool::True) => *self = Bool::Neither,
             (Bool::Both, other) | (other, Bool::Both) => *self = *other,
+            (Bool::True, Bool::True) | (Bool::False, Bool::False) => {}
         }
     }
 }
@@ -49,7 +52,7 @@ impl PartialOrd for Bool {
             | (Bool::Both, Bool::Both) => Some(Ordering::Equal),
             (Bool::Neither, _) | (_, Bool::Both) => Some(Ordering::Less),
             (Bool::Both, _) | (_, Bool::Neither) => Some(Ordering::Greater),
-            (Bool::True, Bool::False) => None,
+            (Bool::True, Bool::False) | (Bool::False, Bool::True) => None,
         }
     }
 }
@@ -78,6 +81,17 @@ impl Not for Bool {
             Bool::True => Bool::False,
             Bool::False => Bool::True,
             Bool::Both => Bool::Neither,
+        }
+    }
+}
+
+impl Display for Bool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Bool::Neither => write!(f, "⊥"),
+            Bool::True => write!(f, "t"),
+            Bool::False => write!(f, "f"),
+            Bool::Both => write!(f, "t/f"),
         }
     }
 }

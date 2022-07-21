@@ -480,7 +480,6 @@ mod tests {
         }";
         let spec_const = parse_to_string(spec).expect("should parse");
         let spec = to_lccsl(&spec_const.constraints, &spec_const.name);
-        println!("{:?}", spec_const);
         assert_eq!(
             remove_whitespace(&spec),
             remove_whitespace(&to_lccsl(&spec_const.constraints, &spec_const.name))

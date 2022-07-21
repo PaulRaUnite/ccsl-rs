@@ -61,7 +61,6 @@ fn unfold(spec: Vec<STS<u32, StaticBitmapLabel>>, dir: &Path) -> Result<(), Box<
     let len = spec.len();
     for (i, perm) in (0..len).permutations(len).enumerate() {
         let spec_perm = perm.iter().map(|i| spec[*i as usize].clone()).collect_vec();
-        println!("{}\n{}", i, spec_perm.iter().join("\n"));
         let anti_perm = Permutation::from_vec(perm).inverse();
         for comb in generate_combinations(&spec_perm) {
             let orig_comb = anti_perm.apply_slice(comb.as_slice());

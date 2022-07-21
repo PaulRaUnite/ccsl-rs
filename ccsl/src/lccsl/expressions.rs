@@ -328,6 +328,9 @@ impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B> {
             right: other.into(),
         }
     }
+    pub fn neq(self, other: BooleanExpression<VI, VB, C, B>) -> BooleanExpression<VI, VB, C, B> {
+        !self.eq(other)
+    }
 
     pub fn var(v: impl Into<VB>) -> BooleanExpression<VI, VB, C, B> {
         BooleanExpression::Variable(v.into())

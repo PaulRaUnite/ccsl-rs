@@ -1,6 +1,7 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::{Lattice, Prec, Succ, ValueDomain};
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::{Add, Deref, Not, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -111,6 +112,23 @@ impl<T: PartialOrd> PartialOrd for RightBound<T> {
             (Infinity, Bound(_)) => Some(Ordering::Greater),
             (Bound(_), Infinity) => Some(Ordering::Less),
             (Bound(a), Bound(b)) => a.partial_cmp(b),
+        }
+    }
+}
+
+impl<T: Display> Display for LeftBound<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LeftBound::Infinity => write!(f, "-∞"),
+            LeftBound::Bound(b) => write!(f, "{}", b),
+        }
+    }
+}
+impl<T: Display> Display for RightBound<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RightBound::Infinity => write!(f, "+∞"),
+            RightBound::Bound(b) => write!(f, "{}", b),
         }
     }
 }
@@ -288,14 +306,22 @@ impl From<Bool> for Interval<i64> {
     }
 }
 
-pub type IntegerInterval = Interval<i64>;
+impl<T: Display> Display for Interval<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Interval::Bottom => write!(f, "⊥"),
+            Interval::Bound(left, right) => write!(f, "[{},{}]", left, right),
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
+    use crate::interpretation::interval::Interval;
     use crate::interpretation::Lattice;
     use std::cmp::Ordering;
 
-    use super::IntegerInterval;
+    type IntegerInterval = Interval<i64>;
 
     #[test]
     fn test_add_interval() {
