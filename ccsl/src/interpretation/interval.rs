@@ -1,7 +1,8 @@
 use crate::interpretation::boolean::Bool;
-use crate::interpretation::{Lattice, Prec, Succ, ValueDomain};
+use crate::interpretation::{Lattice, Prec, Succ, ValueDomain, Widening};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::marker::PhantomData;
 use std::ops::{Add, Deref, Not, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -311,6 +312,33 @@ impl<T: Display> Display for Interval<T> {
         match self {
             Interval::Bottom => write!(f, "⊥"),
             Interval::Bound(left, right) => write!(f, "[{},{}]", left, right),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct StandardWidening<T>(PhantomData<T>);
+
+impl<T: Clone + Ord> Widening for StandardWidening<T> {
+    type Domain = Interval<T>;
+
+    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+        match (prev, next) {
+            (Interval::Bottom, Interval::Bottom) => Interval::Bottom,
+            (Interval::Bottom, Interval::Bound(_, _)) => next.clone(),
+            (Interval::Bound(_, _), Interval::Bottom) => prev.clone(),
+            (Interval::Bound(a, b), Interval::Bound(c, d)) => Interval::Bound(
+                if a <= c {
+                    a.clone()
+                } else {
+                    LeftBound::Infinity
+                },
+                if b >= d {
+                    b.clone()
+                } else {
+                    RightBound::Infinity
+                },
+            ),
         }
     }
 }

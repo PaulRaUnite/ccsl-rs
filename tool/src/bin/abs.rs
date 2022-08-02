@@ -1,4 +1,5 @@
-use ccsl::lccsl::analysis::{assume, execute, Invariant};
+use ccsl::interpretation::interval::StandardWidening;
+use ccsl::lccsl::analysis::{assume, execute, Invariant, StateWidening};
 use ccsl::lccsl::constraints::{Delay, Precedence, Specification};
 
 fn main() {
@@ -38,7 +39,7 @@ fn main() {
     .into();
 
     println!("Start");
-    for (k, v) in execute(&spec) {
-        println!("{:15?}, {}", k, v);
+    for (k, v) in execute::<usize, StateWidening<usize, StandardWidening<i64>>>(&spec) {
+        println!("{:15}, {}", k, v);
     }
 }

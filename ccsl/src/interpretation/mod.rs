@@ -18,17 +18,17 @@ pub trait ValueDomain: Lattice + From<Self::C> {
     type C;
 }
 
-pub(crate) mod boolean;
-pub(crate) mod interval;
+pub mod boolean;
+pub mod interval;
 
 pub trait Widening {
     type Domain;
-    fn widen(prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
+    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
 }
 
 pub trait Narrowing {
     type Domain;
-    fn narrow(prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
+    fn narrow(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
 }
 
 pub trait Succ {

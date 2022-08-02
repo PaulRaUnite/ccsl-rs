@@ -1,6 +1,6 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::Interval;
-use crate::interpretation::{Lattice, Prec, Succ};
+use crate::interpretation::{Lattice, Prec, Succ, Widening};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
@@ -227,6 +227,19 @@ pub enum Step {
     Exit,
 }
 
+impl Display for Step {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Step::Init => "Init",
+            Step::LoopHead => "LoopHead",
+            Step::ClockInput => "ClockInput",
+            Step::CounterUpdate => "CounterUpdate",
+            Step::Exit => "Exit",
+        };
+        f.pad(s)
+    }
+}
+
 // TODO: any better memory layout for the task?
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ExecutionState<C> {
@@ -256,15 +269,17 @@ impl<C> ExecutionState<C> {
     }
 }
 
-pub fn execute<C>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
+pub fn execute<C, W>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
 where
     C: Ord + Hash + Clone + Display,
+    W: Widening<Domain = ExecutionState<C>> + Default,
 {
     let program: ProgramEffects<C> = spec.into();
     let (pos, neg) = program.invariant.abstractify();
     let mut prev = init_state();
     let mut curr = init_state();
-    for _ in 0..100 {
+    let mut widening = W::default();
+    loop {
         for step in &[
             Step::Init,
             Step::LoopHead,
@@ -284,7 +299,8 @@ where
                 Step::LoopHead => {
                     let body = curr.get(&Step::CounterUpdate).unwrap();
                     let init = curr.get(&Step::Init).unwrap();
-                    curr.insert(*step, body.clone() | init.clone());
+                    let head = curr.get(&Step::LoopHead).unwrap();
+                    curr.insert(*step, widening.widen(head, &(body.clone() | init.clone())));
                 }
                 Step::ClockInput => {
                     let mut input = ExecutionState::new();
@@ -336,11 +352,12 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
     )
 }
 
-pub fn stop_condition<C>(spec: &Specification<C>) -> ExecutionState<C>
+pub fn stop_condition<C, W>(spec: &Specification<C>) -> ExecutionState<C>
 where
     C: Clone + Ord + Hash + Display,
+    W: Widening<Domain = ExecutionState<C>> + Default,
 {
-    execute(spec).get(&Step::Exit).unwrap().clone()
+    execute::<C, W>(spec).get(&Step::Exit).unwrap().clone()
 }
 
 impl<C: Ord + Clone + Display> Invariant<C> {
@@ -399,7 +416,7 @@ pub fn assume<C: Ord + Clone + Display>(
             }
         },
         BooleanExpression::Not(e) => assume(e, !value),
-        BooleanExpression::Constant(_) => panic!("should not be present"),
+        BooleanExpression::Constant(c) => panic!("should not be present"),
         BooleanExpression::Variable(v) => {
             let mut s = ExecutionState::new();
             s.booleans.insert(v.clone(), value.into());
@@ -463,5 +480,48 @@ impl<C: Ord> Not for ExecutionState<C> {
         self.booleans.values_mut().for_each(|v| *v = !*v);
         self.integers.values_mut().for_each(|v| *v = !*v);
         self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StateWidening<C, W> {
+    integers: BTreeMap<Delta<C>, W>,
+}
+
+impl<S, W> Default for StateWidening<S, W> {
+    fn default() -> Self {
+        Self {
+            integers: BTreeMap::new(),
+        }
+    }
+}
+
+impl<C: Ord + Clone + Hash, W> Widening for StateWidening<C, W>
+where
+    W: Widening<Domain = Interval<i64>> + Default,
+{
+    type Domain = ExecutionState<C>;
+
+    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+        let mut result = ExecutionState::new();
+        result.booleans = next.booleans.clone();
+        let keys = prev
+            .integers
+            .keys()
+            .chain(next.integers.keys())
+            .cloned()
+            .unique()
+            .collect_vec();
+        for k in keys {
+            let prev = prev.integers.get(&k).copied().unwrap_or(Interval::Bottom);
+            let next = next.integers.get(&k).copied().unwrap_or(Interval::Bottom);
+            let widening = self
+                .integers
+                .entry(k.clone())
+                .or_insert_with(Default::default);
+            result.integers.insert(k, widening.widen(&prev, &next));
+        }
+
+        result
     }
 }
