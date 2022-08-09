@@ -1,7 +1,7 @@
 use crate::interpretation::{Lattice, ValueDomain};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::{Deref, Not};
+use std::ops::{BitAnd, BitOr, Deref, Not};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Bool {
@@ -93,5 +93,23 @@ impl Display for Bool {
             Bool::False => write!(f, "f"),
             Bool::Both => write!(f, "t/f"),
         }
+    }
+}
+
+impl BitOr for Bool {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self.union_inplace(&rhs);
+        self
+    }
+}
+
+impl BitAnd for Bool {
+    type Output = Self;
+
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.intersection_inplace(&rhs);
+        self
     }
 }

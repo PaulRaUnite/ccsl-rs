@@ -3,7 +3,9 @@ use crate::interpretation::{Lattice, Prec, Succ, ValueDomain, Widening};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
-use std::ops::{Add, Deref, Not, RangeFrom, RangeInclusive, RangeToInclusive, Sub};
+use std::ops::{
+    Add, BitAnd, BitOr, Deref, Not, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive, Sub,
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum LeftBound<T> {
@@ -248,6 +250,11 @@ impl<T: Clone> From<RangeToInclusive<T>> for Interval<T> {
         Interval::Bound(LeftBound::Infinity, RightBound::Bound(range.end))
     }
 }
+impl<T: Clone + Prec> From<RangeTo<T>> for Interval<T> {
+    fn from(range: RangeTo<T>) -> Self {
+        Interval::Bound(LeftBound::Infinity, RightBound::Bound(range.end.prec()))
+    }
+}
 impl<T: Clone> From<RangeFrom<T>> for Interval<T> {
     fn from(range: RangeFrom<T>) -> Self {
         Interval::Bound(LeftBound::Bound(range.start), RightBound::Infinity)
@@ -262,11 +269,11 @@ impl<T: Clone> From<RangeFrom<T>> for Interval<T> {
 // }
 
 impl<T> Interval<T> {
-    const fn top() -> Self {
+    pub const fn top() -> Self {
         Interval::Bound(LeftBound::Infinity, RightBound::Infinity)
     }
 
-    const fn bottom() -> Self {
+    pub const fn bottom() -> Self {
         Interval::Bottom
     }
 }
@@ -421,5 +428,23 @@ mod test {
         assert_eq!(a.union(&b), (..=5).into());
         assert_eq!(a.union(&c), (2..).into());
         assert_eq!(b.union(&c), IntegerInterval::top());
+    }
+}
+
+impl<T: Clone + Ord> BitOr for Interval<T> {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self.union_inplace(&rhs);
+        self
+    }
+}
+
+impl<T: Clone + Ord> BitAnd for Interval<T> {
+    type Output = Self;
+
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.intersection_inplace(&rhs);
+        self
     }
 }

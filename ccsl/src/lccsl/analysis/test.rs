@@ -1,8 +1,14 @@
-use crate::lccsl::analysis::Invariant;
+use crate::interpretation::boolean::Bool;
+use crate::interpretation::interval::{Interval, StandardWidening};
+use crate::interpretation::Widening;
+use crate::lccsl::analysis::{assume, ExecutionState, Invariant, StateWidening};
+use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Delay, Exclusion, Intersection, Minus, Precedence, Subclocking, Union,
 };
-use std::collections::BTreeMap;
+use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
+use map_macro::map;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn test_causality() {
@@ -273,5 +279,127 @@ fn test_delay() {
 
     for (traces, expect) in variants {
         assert_eq!(c.check(traces), expect);
+    }
+}
+
+#[test]
+fn test_assume() {
+    let a = "a";
+    let b = "b";
+    let c = "c";
+    let av = BooleanExpression::var(a);
+    let bv = BooleanExpression::var(b);
+    let cv = BooleanExpression::var(c);
+    let abv = IntegerExpression::var(Delta(a, b));
+    // let bcv = IntegerExpression::var(Delta(b, c));
+    let table = vec![
+        (
+            !av.clone(),
+            (map! {}, map! {a => Bool::False}),
+            (map! {}, map! {a => Bool::True}),
+        ),
+        (
+            abv.more_eq(0) & abv.less_eq(0),
+            (map! {Delta(a,b) => 0.into() }, map! {}),
+            (map! {Delta(a,b) => Interval::top() }, map! {}),
+        ),
+        (
+            abv.more_eq(0) | abv.less_eq(0),
+            (map! {Delta(a,b) => Interval::top() }, map! {}),
+            (map! {Delta(a,b) => Interval::bottom() }, map! {}),
+        ),
+        (
+            abv.more(0) | abv.less(0),
+            (map! {Delta(a,b) => Interval::top() }, map! {}),
+            (map! {Delta(a,b) => 0.into() }, map! {}),
+        ),
+        (
+            abv.eq(0).implies(!bv),
+            (
+                map! {Delta(a,b) => Interval::top() },
+                map! {b => Bool::Both },
+            ),
+            (map! {Delta(a,b) => 0.into() }, map! {b => Bool::True}),
+        ),
+        (
+            abv.more_eq(0).eq(abv.eq(0)),
+            (map! {Delta(a,b) => (..=0).into() }, map! {}),
+            (map! {Delta(a,b) => (..=0).into() }, map! {}),
+        ),
+        (
+            (av & !cv).eq(abv.more_eq(0)).eq(abv.eq(0)),
+            (
+                map! {Delta(a,b) => Interval::top() },
+                map! {a => Bool::Both, c => Bool::Both},
+            ),
+            (
+                map! {Delta(a,b) => Interval::top() },
+                map! {a => Bool::Both, c => Bool::Both},
+            ),
+        ),
+    ];
+
+    type C = &'static str;
+
+    for case in table {
+        let (inv, expected_true, expected_false): (
+            BooleanExpression<Delta<C>, C>,
+            (HashMap<Delta<C>, Interval<i64>>, HashMap<C, Bool>),
+            (HashMap<Delta<C>, Interval<i64>>, HashMap<C, Bool>),
+        ) = case;
+        assert_eq!(assume(&inv, true), ExecutionState::from(expected_true));
+        assert_eq!(assume(&inv, false), ExecutionState::from(expected_false));
+    }
+}
+
+#[test]
+fn test_assume_equivalent() {
+    let a = "a";
+    let b = "b";
+    let av = BooleanExpression::var(a);
+    let abv = IntegerExpression::var(Delta(a, b));
+    let invariant1 = !abv.eq(0).implies(!av.clone());
+    let invariant2 = abv.eq(0) & av;
+
+    assert_eq!(assume(&invariant1, true), assume(&invariant2, true));
+    assert_eq!(assume(&invariant1, false), assume(&invariant2, false));
+}
+
+#[test]
+fn test_state_widening() {
+    let a = "a";
+    let b = "b";
+    let table = vec![
+        (
+            map! {Delta(a,b) => 0.into()},
+            map! {Delta(a,b) => 1.into() },
+            map! {Delta(a,b) => (0..).into() },
+        ),
+        (
+            map! {Delta(a,b) => (0..).into()},
+            map! {Delta(a,b) => (3..).into() },
+            map! {Delta(a,b) => (0..).into() },
+        ),
+        (
+            map! {Delta(a,b) => (0..=3).into()},
+            map! {Delta(a,b) => (2..=3).into() },
+            map! {Delta(a,b) => (0..=3).into() },
+        ),
+    ];
+    type C = &'static str;
+    let mut widening = StateWidening::<C, StandardWidening<i64>>::default();
+
+    for case in table {
+        let (prev, curr, expected): (
+            HashMap<Delta<C>, Interval<i64>>,
+            HashMap<Delta<C>, Interval<i64>>,
+            HashMap<Delta<C>, Interval<i64>>,
+        ) = case;
+        let prev = ExecutionState::from((prev, HashMap::new()));
+        let curr = ExecutionState::from((curr, HashMap::new()));
+        assert_eq!(
+            widening.widen(&prev, &curr),
+            ExecutionState::from((expected, HashMap::new()))
+        );
     }
 }

@@ -1,6 +1,6 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::Interval;
-use crate::interpretation::{Lattice, Prec, Succ, Widening};
+use crate::interpretation::{Prec, Succ, Widening};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
@@ -11,7 +11,6 @@ use crate::lccsl::expressions::{
 };
 use derive_more::From;
 use itertools::Itertools;
-use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -247,6 +246,15 @@ pub struct ExecutionState<C> {
     booleans: BTreeMap<C, Bool>,
 }
 
+impl<C: Ord> From<(HashMap<Delta<C>, Interval<i64>>, HashMap<C, Bool>)> for ExecutionState<C> {
+    fn from((i, b): (HashMap<Delta<C>, Interval<i64>>, HashMap<C, Bool>)) -> Self {
+        Self {
+            integers: i.into_iter().collect(),
+            booleans: b.into_iter().collect(),
+        }
+    }
+}
+
 impl<C: Display> Display for ExecutionState<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (k, v) in &self.integers {
@@ -271,7 +279,7 @@ impl<C> ExecutionState<C> {
 
 pub fn execute<C, W>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
 where
-    C: Ord + Hash + Clone + Display,
+    C: Ord + Hash + Clone + Display + Debug,
     W: Widening<Domain = ExecutionState<C>> + Default,
 {
     let program: ProgramEffects<C> = spec.into();
@@ -352,24 +360,24 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
     )
 }
 
+// TODO: tests??
 pub fn stop_condition<C, W>(spec: &Specification<C>) -> ExecutionState<C>
 where
-    C: Clone + Ord + Hash + Display,
+    C: Clone + Ord + Hash + Display + Debug,
     W: Widening<Domain = ExecutionState<C>> + Default,
 {
     execute::<C, W>(spec).get(&Step::Exit).unwrap().clone()
 }
 
-impl<C: Ord + Clone + Display> Invariant<C> {
+impl<C: Ord + Clone + Display + Debug> Invariant<C> {
     fn abstractify(&self) -> (ExecutionState<C>, ExecutionState<C>) {
         (assume(&self.0, true), assume(&self.0, false))
     }
 }
 
-// TODO: check the correctness
-pub fn assume<C: Ord + Clone + Display>(
+pub fn assume<C: Ord + Clone + Display + Debug>(
     e: &BooleanExpression<Delta<C>, C>,
-    value: bool,
+    expected: bool,
 ) -> ExecutionState<C> {
     match e {
         BooleanExpression::IntegerBinary { kind, left, right } => {
@@ -380,30 +388,33 @@ pub fn assume<C: Ord + Clone + Display>(
                 }
                 _ => unimplemented!(),
             };
-            let interval: Interval<i64> = match kind {
+            let mut interval: Interval<i64> = match kind {
                 IntegerComparisonKind::Equal => c.into(),
                 IntegerComparisonKind::Less => (..=c.prec()).into(),
                 IntegerComparisonKind::LessEq => (..=c).into(),
                 IntegerComparisonKind::More => (c.succ()..).into(),
                 IntegerComparisonKind::MoreEq => (c..).into(),
             };
+            if !expected {
+                interval = !interval;
+            }
             let mut state = ExecutionState::new();
             state.integers.insert(v.clone(), interval);
             state
         }
         BooleanExpression::BooleanBinary { kind, left, right } => match kind {
             BooleanComparisonKind::And => {
-                if value {
+                if expected {
                     assume(left, true) & assume(right, true)
                 } else {
-                    assume(left, false) | assume(right, false) //??
+                    assume(left, false) | assume(right, false)
                 }
             }
             BooleanComparisonKind::Or => {
-                if value {
+                if expected {
                     assume(left, true) | assume(right, true)
                 } else {
-                    assume(left, false) & assume(right, false) //??
+                    assume(left, false) & assume(right, false)
                 }
             }
             BooleanComparisonKind::Xor => {
@@ -415,61 +426,69 @@ pub fn assume<C: Ord + Clone + Display>(
                     | (assume(left, false) & assume(right, false))
             }
         },
-        BooleanExpression::Not(e) => assume(e, !value),
-        BooleanExpression::Constant(c) => panic!("should not be present"),
+        BooleanExpression::Not(e) => assume(e, !expected),
+        BooleanExpression::Constant(_) => panic!("should not be present"),
         BooleanExpression::Variable(v) => {
             let mut s = ExecutionState::new();
-            s.booleans.insert(v.clone(), value.into());
+            s.booleans.insert(v.clone(), expected.into());
             s
         }
     }
 }
 
-impl<C: Ord> BitOr for ExecutionState<C> {
-    type Output = Self;
+impl<C: Ord + Clone> ExecutionState<C> {
+    fn combine(
+        self,
+        rhs: Self,
+        bool_default: Bool,
+        bool_op: impl Fn(Bool, Bool) -> Bool,
+        int_default: Interval<i64>,
+        int_op: impl Fn(Interval<i64>, Interval<i64>) -> Interval<i64>,
+    ) -> ExecutionState<C> {
+        let booleans = self
+            .booleans
+            .keys()
+            .chain(rhs.booleans.keys())
+            .map(|k| {
+                let x = self.booleans.get(k).copied().unwrap_or(bool_default);
+                let y = rhs.booleans.get(k).copied().unwrap_or(bool_default);
+                (k.clone(), bool_op(x, y))
+            })
+            .collect();
+        let integers = self
+            .integers
+            .keys()
+            .chain(rhs.integers.keys())
+            .map(|k| {
+                let x = self.integers.get(k).copied().unwrap_or(int_default);
+                let y = rhs.integers.get(k).copied().unwrap_or(int_default);
+                (k.clone(), int_op(x, y))
+            })
+            .collect();
 
-    fn bitor(mut self, rhs: Self) -> Self::Output {
-        for (k, v) in rhs.booleans {
-            match self.booleans.entry(k) {
-                Entry::Vacant(vac) => {
-                    vac.insert(v);
-                }
-                Entry::Occupied(mut occ) => occ.get_mut().union_inplace(&v),
-            }
-        }
-        for (k, v) in rhs.integers {
-            match self.integers.entry(k) {
-                Entry::Vacant(vac) => {
-                    vac.insert(v);
-                }
-                Entry::Occupied(mut occ) => occ.get_mut().union_inplace(&v),
-            }
-        }
-        self
+        Self { booleans, integers }
     }
 }
 
-impl<C: Ord> BitAnd for ExecutionState<C> {
+impl<C: Ord + Clone> BitOr for ExecutionState<C> {
     type Output = Self;
 
-    fn bitand(mut self, rhs: Self) -> Self::Output {
-        for (k, v) in rhs.booleans {
-            match self.booleans.entry(k) {
-                Entry::Vacant(vac) => {
-                    vac.insert(v);
-                }
-                Entry::Occupied(mut occ) => occ.get_mut().intersection_inplace(&v),
-            }
-        }
-        for (k, v) in rhs.integers {
-            match self.integers.entry(k) {
-                Entry::Vacant(vac) => {
-                    vac.insert(v);
-                }
-                Entry::Occupied(mut occ) => occ.get_mut().intersection_inplace(&v),
-            }
-        }
-        self
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.combine(rhs, Bool::Both, BitOr::bitor, Interval::top(), BitOr::bitor)
+    }
+}
+
+impl<C: Ord + Clone> BitAnd for ExecutionState<C> {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        self.combine(
+            rhs,
+            Bool::Both,
+            BitAnd::bitand,
+            Interval::top(),
+            BitAnd::bitand,
+        )
     }
 }
 
