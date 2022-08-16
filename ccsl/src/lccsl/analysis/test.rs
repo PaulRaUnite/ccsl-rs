@@ -1,12 +1,13 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::{Interval, StandardWidening};
-use crate::interpretation::Widening;
-use crate::lccsl::analysis::{assume, ExecutionState, Invariant, StateWidening};
+use crate::interpretation::{Lattice, Widening};
+use crate::lccsl::analysis::{assume, execute, ExecutionState, Invariant, StateWidening, Step};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Delay, Exclusion, Intersection, Minus, Precedence, Subclocking, Union,
 };
 use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
+use crate::lccsl::parser::{parse_to_string, ParseError};
 use map_macro::map;
 use std::collections::{BTreeMap, HashMap};
 
@@ -401,5 +402,50 @@ fn test_state_widening() {
             widening.widen(&prev, &curr),
             ExecutionState::from((expected, HashMap::new()))
         );
+    }
+}
+
+#[test]
+fn test_spec_invariant() {
+    let table = vec![(
+        "Precedence a < b\n Precedence b < c\nc = a $ 1",
+        (
+            map! {
+                Delta("a", "b") => (0..=1).into(),
+                Delta("b", "c") => (0..=1).into(),
+                Delta("a", "c") => (0..=1).into(),
+            },
+            map! {
+                "a" => Bool::Both,
+                "b" => Bool::Both,
+                "c" => Bool::Both,
+            },
+        ),
+    )];
+    let table = table
+        .into_iter()
+        .map(|(spec, (int, bool))| -> Result<_, ParseError> {
+            Ok((
+                parse_to_string(&format!(
+                    "Specification test {{\nClock a,b,c [\n{}\n]\n}}",
+                    spec
+                ))?
+                .into(),
+                ExecutionState::from((
+                    int.into_iter()
+                        .map(|(k, v)| (Delta(k.0.to_string(), k.1.to_string()), v))
+                        .collect(),
+                    bool.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                )),
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    for (spec, expected) in table {
+        let state =
+            &execute::<String, StateWidening<String, StandardWidening<i64>>>(&spec)[&Step::If];
+        println!("{}", state);
+        assert!(expected.subset(state));
     }
 }

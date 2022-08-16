@@ -1,6 +1,6 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::Interval;
-use crate::interpretation::{Prec, Succ, Widening};
+use crate::interpretation::{Lattice, Prec, Succ, Widening};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
@@ -11,6 +11,7 @@ use crate::lccsl::expressions::{
 };
 use derive_more::From;
 use itertools::Itertools;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -221,8 +222,8 @@ pub enum Step {
     #[default]
     Init,
     LoopHead,
-    ClockInput,
-    CounterUpdate,
+    Update,
+    If,
     Exit,
 }
 
@@ -231,8 +232,8 @@ impl Display for Step {
         let s = match self {
             Step::Init => "Init",
             Step::LoopHead => "LoopHead",
-            Step::ClockInput => "ClockInput",
-            Step::CounterUpdate => "CounterUpdate",
+            Step::Update => "CounterUpdate",
+            Step::If => "If",
             Step::Exit => "Exit",
         };
         f.pad(s)
@@ -284,15 +285,15 @@ where
 {
     let program: ProgramEffects<C> = spec.into();
     let (pos, neg) = program.invariant.abstractify();
-    let mut prev = init_state();
+    let mut prev = HashMap::new();
     let mut curr = init_state();
     let mut widening = W::default();
     loop {
         for step in &[
             Step::Init,
             Step::LoopHead,
-            Step::ClockInput,
-            Step::CounterUpdate,
+            Step::Update,
+            Step::If,
             Step::Exit,
         ] {
             match step {
@@ -305,38 +306,47 @@ where
                     }
                 }
                 Step::LoopHead => {
-                    let body = curr.get(&Step::CounterUpdate).unwrap();
+                    let body = curr.get(&Step::Update).unwrap();
                     let init = curr.get(&Step::Init).unwrap();
-                    let head = curr.get(&Step::LoopHead).unwrap();
-                    curr.insert(*step, widening.widen(head, &(body.clone() | init.clone())));
+                    let head = body.clone() | init.clone();
+                    curr.insert(
+                        *step,
+                        prev.get(step)
+                            .map(|prev| widening.widen(prev, &head))
+                            .unwrap_or(head),
+                    );
                 }
-                Step::ClockInput => {
-                    let mut input = ExecutionState::new();
+                Step::Update => {
+                    let mut state = curr.get(&Step::LoopHead).unwrap().clone();
                     for clock in &program.clocks {
-                        input.booleans.insert(clock.clone(), Bool::Both);
+                        state.booleans.insert(clock.clone(), Bool::Both);
                     }
-                    curr.insert(*step, curr[&Step::LoopHead].clone() | input);
-                }
-                Step::CounterUpdate => {
-                    let input = curr.get(&Step::ClockInput).unwrap();
-                    let mut filtered_input = input.clone() & pos.clone();
+                    state.intersection_inplace(&pos);
                     for counter in &program.counters {
-                        let x = filtered_input.booleans[&counter.0];
-                        let y = filtered_input.booleans[&counter.0];
-                        let mut x_y = filtered_input.integers[counter];
-                        x_y = x_y + x.into();
-                        x_y = x_y - y.into();
-                        filtered_input.integers.insert(counter.clone(), x_y);
+                        let x = state.booleans[&counter.0].into();
+                        let y = state.booleans[&counter.0].into();
+                        let mut x_y = state.integers[counter];
+                        x_y = x_y + x;
+                        x_y = x_y - y;
+                        //println!("{} {} {} {}", counter, x_y, x, y);
+                        state.integers.insert(counter.clone(), x_y);
                     }
+                    //println!("{}", &filtered_input);
+                    curr.insert(*step, state);
+                }
+                Step::If => {
+                    let input = curr.get(&Step::Update).unwrap();
+                    let filtered_input = input.clone() & pos.clone();
                     curr.insert(*step, filtered_input);
                 }
                 Step::Exit => {
-                    let input = curr.get(&Step::ClockInput).unwrap();
+                    let input = curr.get(&Step::Update).unwrap();
                     let exit = curr.get(&Step::Exit).unwrap();
                     let filtered_input = input.clone() & neg.clone();
                     curr.insert(*step, exit.clone() | filtered_input);
                 }
             }
+            println!("{} {}", step, &curr[step]);
         }
         if prev == curr {
             break;
@@ -351,8 +361,8 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
         [
             Step::Init,
             Step::LoopHead,
-            Step::ClockInput,
-            Step::CounterUpdate,
+            Step::Update,
+            Step::If,
             Step::Exit,
         ]
         .into_iter()
@@ -360,7 +370,6 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
     )
 }
 
-// TODO: tests??
 pub fn stop_condition<C, W>(spec: &Specification<C>) -> ExecutionState<C>
 where
     C: Clone + Ord + Hash + Display + Debug,
@@ -405,26 +414,28 @@ pub fn assume<C: Ord + Clone + Display + Debug>(
         BooleanExpression::BooleanBinary { kind, left, right } => match kind {
             BooleanComparisonKind::And => {
                 if expected {
-                    assume(left, true) & assume(right, true)
+                    assume(left, true).intersection_complemented(assume(right, true))
                 } else {
-                    assume(left, false) | assume(right, false)
+                    assume(left, false).union_complemented(assume(right, false))
                 }
             }
             BooleanComparisonKind::Or => {
                 if expected {
-                    assume(left, true) | assume(right, true)
+                    assume(left, true).union_complemented(assume(right, true))
                 } else {
-                    assume(left, false) & assume(right, false)
+                    assume(left, false).intersection_complemented(assume(right, false))
                 }
             }
-            BooleanComparisonKind::Xor => {
-                (assume(left, true) & assume(right, false))
-                    | (assume(left, false) & assume(right, true))
-            }
-            BooleanComparisonKind::Eq => {
-                (assume(left, true) & assume(right, true))
-                    | (assume(left, false) & assume(right, false))
-            }
+            BooleanComparisonKind::Xor => assume(left, true)
+                .intersection_complemented(assume(right, false))
+                .union_complemented(
+                    assume(left, false).intersection_complemented(assume(right, true)),
+                ),
+            BooleanComparisonKind::Eq => assume(left, true)
+                .intersection_complemented(assume(right, true))
+                .union_complemented(
+                    assume(left, false).intersection_complemented(assume(right, false)),
+                ),
         },
         BooleanExpression::Not(e) => assume(e, !expected),
         BooleanExpression::Constant(_) => panic!("should not be present"),
@@ -438,8 +449,8 @@ pub fn assume<C: Ord + Clone + Display + Debug>(
 
 impl<C: Ord + Clone> ExecutionState<C> {
     fn combine(
-        self,
-        rhs: Self,
+        &self,
+        rhs: &Self,
         bool_default: Bool,
         bool_op: impl Fn(Bool, Bool) -> Bool,
         int_default: Interval<i64>,
@@ -473,22 +484,18 @@ impl<C: Ord + Clone> ExecutionState<C> {
 impl<C: Ord + Clone> BitOr for ExecutionState<C> {
     type Output = Self;
 
-    fn bitor(self, rhs: Self) -> Self::Output {
-        self.combine(rhs, Bool::Both, BitOr::bitor, Interval::top(), BitOr::bitor)
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self.union_inplace(&rhs);
+        self
     }
 }
 
 impl<C: Ord + Clone> BitAnd for ExecutionState<C> {
     type Output = Self;
 
-    fn bitand(self, rhs: Self) -> Self::Output {
-        self.combine(
-            rhs,
-            Bool::Both,
-            BitAnd::bitand,
-            Interval::top(),
-            BitAnd::bitand,
-        )
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.intersection_inplace(&rhs);
+        self
     }
 }
 
@@ -515,13 +522,14 @@ impl<S, W> Default for StateWidening<S, W> {
     }
 }
 
-impl<C: Ord + Clone + Hash, W> Widening for StateWidening<C, W>
+impl<C: Ord + Clone + Hash + Display, W> Widening for StateWidening<C, W>
 where
     W: Widening<Domain = Interval<i64>> + Default,
 {
     type Domain = ExecutionState<C>;
 
     fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+        //println!("{}, {}", prev, next);
         let mut result = ExecutionState::new();
         result.booleans = next.booleans.clone();
         let keys = prev
@@ -542,5 +550,64 @@ where
         }
 
         result
+    }
+}
+
+impl<C: Ord + Clone> ExecutionState<C> {
+    fn union_complemented(self, rhs: Self) -> Self {
+        self.combine(
+            &rhs,
+            Bool::Both,
+            BitOr::bitor,
+            Interval::top(),
+            BitOr::bitor,
+        )
+    }
+    fn intersection_complemented(self, rhs: Self) -> Self {
+        self.combine(
+            &rhs,
+            Bool::Both,
+            BitAnd::bitand,
+            Interval::top(),
+            BitAnd::bitand,
+        )
+    }
+}
+
+impl<C: PartialEq> PartialOrd for ExecutionState<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        todo!()
+    }
+}
+
+impl<C: Clone + Ord> Lattice for ExecutionState<C> {
+    fn subset(&self, rhs: &Self) -> bool {
+        self.integers
+            .iter()
+            .all(|(k, x)| rhs.integers.get(k).map(|y| x.subset(y)).unwrap_or(true))
+            & self
+                .booleans
+                .iter()
+                .all(|(k, x)| rhs.booleans.get(k).map(|y| x.subset(y)).unwrap_or(true))
+    }
+
+    fn union_inplace(&mut self, rhs: &Self) {
+        *self = self.combine(
+            rhs,
+            Bool::Neither,
+            BitOr::bitor,
+            Interval::bottom(),
+            BitOr::bitor,
+        )
+    }
+
+    fn intersection_inplace(&mut self, rhs: &Self) {
+        *self = self.combine(
+            rhs,
+            Bool::Neither,
+            BitAnd::bitand,
+            Interval::bottom(),
+            BitAnd::bitand,
+        )
     }
 }

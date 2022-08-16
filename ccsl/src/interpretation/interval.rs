@@ -1,5 +1,5 @@
 use crate::interpretation::boolean::Bool;
-use crate::interpretation::{Lattice, Prec, Succ, ValueDomain, Widening};
+use crate::interpretation::{Lattice, Narrowing, Prec, Succ, ValueDomain, Widening};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
@@ -61,6 +61,28 @@ impl<T: Sub<Output = T>> Sub for RightBound<T> {
         match (self, rhs) {
             (Infinity, _) | (_, Infinity) => Infinity,
             (Bound(a), Bound(b)) => Bound(a - b),
+        }
+    }
+}
+
+impl<T: Sub<Output = T>> Sub<RightBound<T>> for LeftBound<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: RightBound<T>) -> Self::Output {
+        match (self, rhs) {
+            (LeftBound::Infinity, _) | (_, RightBound::Infinity) => LeftBound::Infinity,
+            (LeftBound::Bound(a), RightBound::Bound(b)) => LeftBound::Bound(a - b),
+        }
+    }
+}
+
+impl<T: Sub<Output = T>> Sub<LeftBound<T>> for RightBound<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: LeftBound<T>) -> Self::Output {
+        match (self, rhs) {
+            (RightBound::Infinity, _) | (_, LeftBound::Infinity) => RightBound::Infinity,
+            (RightBound::Bound(a), LeftBound::Bound(b)) => RightBound::Bound(a - b),
         }
     }
 }
@@ -226,7 +248,7 @@ where
         use Interval::*;
         match (self, rhs) {
             (Bottom, _) | (_, Bottom) => Bottom,
-            (Bound(a, b), Bound(c, d)) => Bound(a - c, b - d),
+            (Bound(a, b), Bound(c, d)) => Bound(a - d, b - c),
         }
     }
 }
@@ -350,6 +372,22 @@ impl<T: Clone + Ord> Widening for StandardWidening<T> {
     }
 }
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct IntervalImmediateNarrowing<T>(PhantomData<T>);
+
+impl<T: Clone> Narrowing for IntervalImmediateNarrowing<T> {
+    type Domain = Interval<T>;
+
+    fn narrow(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+        match (prev, next) {
+            (Interval::Bottom, _) | (_, Interval::Bottom) => Interval::Bottom,
+            (Interval::Bound(a, b), Interval::Bound(c, d)) => Interval::Bound(
+                if let LeftBound::Infinity = a { c } else { a }.clone(),
+                if let RightBound::Infinity = b { d } else { b }.clone(),
+            ),
+        }
+    }
+}
 #[cfg(test)]
 mod test {
     use crate::interpretation::interval::Interval;
@@ -364,11 +402,14 @@ mod test {
         let b: IntegerInterval = (2..=6).into();
         let c: IntegerInterval = (5..).into();
         let d: IntegerInterval = IntegerInterval::top();
+        let e: IntegerInterval = 0.into();
+        let f: IntegerInterval = (0..=1).into();
 
         assert_eq!(a + b, (..=9).into());
         assert_eq!(b + c, (7..).into());
         assert_eq!(c + d, IntegerInterval::top());
         assert_eq!(a + d, IntegerInterval::top());
+        assert_eq!(e + f, (0..=1).into())
     }
     #[test]
     fn test_sub_interval() {
@@ -376,11 +417,14 @@ mod test {
         let b: IntegerInterval = (2..=6).into();
         let c: IntegerInterval = (5..).into();
         let d: IntegerInterval = IntegerInterval::top();
+        let f: IntegerInterval = (0..=1).into();
 
-        assert_eq!(a - b, (..=-3).into());
-        assert_eq!(b - c, (-3..).into());
-        assert_eq!(c - d, IntegerInterval::top());
+        assert_eq!(a - b, (..=1).into());
+        assert_eq!(b - c, (..=1).into());
         assert_eq!(a - d, IntegerInterval::top());
+        assert_eq!(b - d, IntegerInterval::top());
+        assert_eq!(a - d, IntegerInterval::top());
+        assert_eq!(f - f, (-1..=1).into());
     }
 
     #[test]

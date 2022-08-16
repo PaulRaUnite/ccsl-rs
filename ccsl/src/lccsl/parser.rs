@@ -23,8 +23,8 @@ pub fn parse_raw(input: &str) -> Result<Pair<Rule>, pest::error::Error<Rule>> {
     Ok(LightCCSLParser::parse(Rule::file, input)?.next().unwrap())
 }
 
-#[derive(Debug)]
-pub struct Specification<C: Eq + Debug> {
+#[derive(Debug, Clone)]
+pub struct Specification<C> {
     pub name: String,
     pub clocks: HashSet<C>,
     pub constraints: Vec<Constraint<C>>,
@@ -41,7 +41,7 @@ pub enum ParseError {
 }
 // TODO: parse into a specialized AST/enum, not directly into constrains,
 //  for reasons of encoding/decoding roundtrip: some constraints
-//  are split and so do not preserve the structure.
+//  are split and so do not preserve the initial structure.
 
 fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn roundabout() {
+    fn roundtrip() {
         let spec = "\
         Specification demo {
             Clock p,a,m,t,c
