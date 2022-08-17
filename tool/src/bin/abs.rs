@@ -1,4 +1,4 @@
-use ccsl::interpretation::interval::StandardWidening;
+use ccsl::interpretation::interval::{IntervalImmediateNarrowing, StandardWidening};
 use ccsl::lccsl::analysis::{assume, interpret, Invariant, StateWidening};
 use ccsl::lccsl::constraints::{Delay, Precedence, Specification};
 
@@ -39,7 +39,12 @@ fn main() {
     .into();
 
     println!("Start");
-    for (k, v) in interpret::<usize, StateWidening<usize, StandardWidening<i64>>>(&spec) {
+    for (k, v) in interpret::<
+        usize,
+        StateWidening<usize, StandardWidening<i64>>,
+        StateWidening<usize, IntervalImmediateNarrowing<i64>>,
+    >(&spec)
+    {
         println!("{:15}, {}", k, v);
     }
 }
