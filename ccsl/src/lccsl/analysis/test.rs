@@ -1,7 +1,7 @@
 use crate::interpretation::boolean::Bool;
-use crate::interpretation::interval::{Interval, StandardWidening};
-use crate::interpretation::{Lattice, Widening};
-use crate::lccsl::analysis::{assume, execute, ExecutionState, Invariant, StateWidening, Step};
+use crate::interpretation::interval::{Interval, IntervalImmediateNarrowing, StandardWidening};
+use crate::interpretation::{Lattice, SequenceLimiter};
+use crate::lccsl::analysis::{assume, interpret, ExecutionState, Invariant, StateWidening, Step};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Delay, Exclusion, Intersection, Minus, Precedence, Subclocking, Union,
@@ -399,7 +399,7 @@ fn test_state_widening() {
         let prev = ExecutionState::from((prev, HashMap::new()));
         let curr = ExecutionState::from((curr, HashMap::new()));
         assert_eq!(
-            widening.widen(&prev, &curr),
+            widening.deduct(&prev, &curr),
             ExecutionState::from((expected, HashMap::new()))
         );
     }
@@ -443,8 +443,11 @@ fn test_spec_invariant() {
         .unwrap();
 
     for (spec, expected) in table {
-        let state =
-            &execute::<String, StateWidening<String, StandardWidening<i64>>>(&spec)[&Step::If];
+        let state = &interpret::<
+            String,
+            StateWidening<String, StandardWidening<i64>>,
+            StateWidening<String, IntervalImmediateNarrowing<i64>>,
+        >(&spec)[&Step::If];
         println!("{}", state);
         assert!(expected.subset(state));
     }

@@ -1,6 +1,6 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::Interval;
-use crate::interpretation::{Lattice, Prec, Succ, Widening};
+use crate::interpretation::{Lattice, Prec, SequenceLimiter, Succ};
 use crate::lccsl::automata::Delta;
 use crate::lccsl::constraints::{
     Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
@@ -278,16 +278,32 @@ impl<C> ExecutionState<C> {
     }
 }
 
-pub fn execute<C, W>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
+pub fn interpret<C, W, N>(spec: &Specification<C>) -> HashMap<Step, ExecutionState<C>>
 where
     C: Ord + Hash + Clone + Display + Debug,
-    W: Widening<Domain = ExecutionState<C>> + Default,
+    W: SequenceLimiter<Domain = ExecutionState<C>> + Default,
+    N: SequenceLimiter<Domain = ExecutionState<C>> + Default,
 {
     let program: ProgramEffects<C> = spec.into();
     let (pos, neg) = program.invariant.abstractify();
-    let mut prev = HashMap::new();
-    let mut curr = init_state();
-    let mut widening = W::default();
+    let curr = init_state();
+    let prev = HashMap::new();
+    let curr = loop_state::<C, W>(&program, &pos, &neg, prev, curr);
+    loop_state::<C, N>(&program, &pos, &neg, curr.clone(), curr)
+}
+
+fn loop_state<C, L>(
+    program: &ProgramEffects<C>,
+    pos: &ExecutionState<C>,
+    neg: &ExecutionState<C>,
+    mut prev: HashMap<Step, ExecutionState<C>>,
+    mut curr: HashMap<Step, ExecutionState<C>>,
+) -> HashMap<Step, ExecutionState<C>>
+where
+    C: Ord + Hash + Clone + Display + Debug,
+    L: SequenceLimiter<Domain = ExecutionState<C>> + Default,
+{
+    let mut limiter = L::default();
     loop {
         for step in &[
             Step::Init,
@@ -308,30 +324,28 @@ where
                 Step::LoopHead => {
                     let body = curr.get(&Step::Update).unwrap();
                     let init = curr.get(&Step::Init).unwrap();
-                    let head = body.clone() | init.clone();
+                    let mut update = ExecutionState::new();
+                    for clock in &program.clocks {
+                        update.booleans.insert(clock.clone(), Bool::Both);
+                    }
+                    let head = body.clone() | init.clone() | update;
                     curr.insert(
                         *step,
                         prev.get(step)
-                            .map(|prev| widening.widen(prev, &head))
+                            .map(|prev| limiter.deduct(prev, &head))
                             .unwrap_or(head),
                     );
                 }
                 Step::Update => {
                     let mut state = curr.get(&Step::LoopHead).unwrap().clone();
-                    for clock in &program.clocks {
-                        state.booleans.insert(clock.clone(), Bool::Both);
-                    }
-                    state.intersection_inplace(&pos);
                     for counter in &program.counters {
                         let x = state.booleans[&counter.0].into();
                         let y = state.booleans[&counter.0].into();
                         let mut x_y = state.integers[counter];
                         x_y = x_y + x;
                         x_y = x_y - y;
-                        //println!("{} {} {} {}", counter, x_y, x, y);
                         state.integers.insert(counter.clone(), x_y);
                     }
-                    //println!("{}", &filtered_input);
                     curr.insert(*step, state);
                 }
                 Step::If => {
@@ -346,7 +360,6 @@ where
                     curr.insert(*step, exit.clone() | filtered_input);
                 }
             }
-            println!("{} {}", step, &curr[step]);
         }
         if prev == curr {
             break;
@@ -370,12 +383,13 @@ fn init_state<C>() -> HashMap<Step, ExecutionState<C>> {
     )
 }
 
-pub fn stop_condition<C, W>(spec: &Specification<C>) -> ExecutionState<C>
+pub fn stop_condition<C, W, N>(spec: &Specification<C>) -> ExecutionState<C>
 where
     C: Clone + Ord + Hash + Display + Debug,
-    W: Widening<Domain = ExecutionState<C>> + Default,
+    W: SequenceLimiter<Domain = ExecutionState<C>> + Default,
+    N: SequenceLimiter<Domain = ExecutionState<C>> + Default,
 {
-    execute::<C, W>(spec).get(&Step::Exit).unwrap().clone()
+    interpret::<C, W, N>(spec).get(&Step::Exit).unwrap().clone()
 }
 
 impl<C: Ord + Clone + Display + Debug> Invariant<C> {
@@ -522,13 +536,13 @@ impl<S, W> Default for StateWidening<S, W> {
     }
 }
 
-impl<C: Ord + Clone + Hash + Display, W> Widening for StateWidening<C, W>
+impl<C: Ord + Clone + Hash + Display, W> SequenceLimiter for StateWidening<C, W>
 where
-    W: Widening<Domain = Interval<i64>> + Default,
+    W: SequenceLimiter<Domain = Interval<i64>> + Default,
 {
     type Domain = ExecutionState<C>;
 
-    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+    fn deduct(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
         //println!("{}, {}", prev, next);
         let mut result = ExecutionState::new();
         result.booleans = next.booleans.clone();
@@ -546,7 +560,7 @@ where
                 .integers
                 .entry(k.clone())
                 .or_insert_with(Default::default);
-            result.integers.insert(k, widening.widen(&prev, &next));
+            result.integers.insert(k, widening.deduct(&prev, &next));
         }
 
         result

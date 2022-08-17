@@ -1,5 +1,5 @@
 use crate::interpretation::boolean::Bool;
-use crate::interpretation::{Lattice, Narrowing, Prec, Succ, ValueDomain, Widening};
+use crate::interpretation::{Lattice, Prec, SequenceLimiter, Succ, ValueDomain};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
@@ -348,10 +348,10 @@ impl<T: Display> Display for Interval<T> {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct StandardWidening<T>(PhantomData<T>);
 
-impl<T: Clone + Ord> Widening for StandardWidening<T> {
+impl<T: Clone + Ord> SequenceLimiter for StandardWidening<T> {
     type Domain = Interval<T>;
 
-    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+    fn deduct(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
         match (prev, next) {
             (Interval::Bottom, Interval::Bottom) => Interval::Bottom,
             (Interval::Bottom, Interval::Bound(_, _)) => next.clone(),
@@ -375,10 +375,10 @@ impl<T: Clone + Ord> Widening for StandardWidening<T> {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct IntervalImmediateNarrowing<T>(PhantomData<T>);
 
-impl<T: Clone> Narrowing for IntervalImmediateNarrowing<T> {
+impl<T: Clone> SequenceLimiter for IntervalImmediateNarrowing<T> {
     type Domain = Interval<T>;
 
-    fn narrow(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
+    fn deduct(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain {
         match (prev, next) {
             (Interval::Bottom, _) | (_, Interval::Bottom) => Interval::Bottom,
             (Interval::Bound(a, b), Interval::Bound(c, d)) => Interval::Bound(

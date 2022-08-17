@@ -21,14 +21,9 @@ pub trait ValueDomain: Lattice + From<Self::C> {
 pub mod boolean;
 pub mod interval;
 
-pub trait Widening {
+pub trait SequenceLimiter {
     type Domain;
-    fn widen(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
-}
-
-pub trait Narrowing {
-    type Domain;
-    fn narrow(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
+    fn deduct(&mut self, prev: &Self::Domain, next: &Self::Domain) -> Self::Domain;
 }
 
 pub trait Succ {
