@@ -1,4 +1,3 @@
-use soa_derive::StructOfArray;
 use std::fmt;
 use std::fmt::Display;
 use std::fs::{create_dir_all, File};
@@ -13,17 +12,6 @@ use anyhow::Result;
 use arrow::array::{ArrayRef, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
-use ccsl::lccsl::algo::{
-    approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
-    limit_conflict_map, CountingVisitor,
-};
-use ccsl::lccsl::automata::label::{ClockLabelClassic, Label};
-use ccsl::lccsl::automata::{STSBuilder, StateRef, STS};
-use ccsl::lccsl::constraints::{
-    Alternates, Causality, Coincidence, Constraint, Delay, Exclusion, Infinity, Intersection,
-    Precedence, Repeat, SampleOn, Subclocking, Supremum, Union,
-};
-use ccsl::lccsl::vizualization::unfold_specification;
 use itertools::Itertools;
 use parquet::arrow::ArrowWriter;
 use permutation::Permutation;
@@ -33,6 +21,15 @@ use petgraph::{Directed, EdgeType, Graph};
 use rayon::iter::{IntoParallelIterator, ParallelBridge};
 use rayon::prelude::{ParallelExtend, ParallelIterator};
 use serde::Serialize;
+use soa_derive::StructOfArray;
+
+use ccsl::lccsl::algo::{
+    approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
+    limit_conflict_map, CountingVisitor,
+};
+use ccsl::lccsl::automata::label::Label;
+use ccsl::lccsl::automata::{StateRef, STS};
+use ccsl::lccsl::constraints::Constraint;
 
 pub trait SoAExt<T> {
     fn with_capacity(size: usize) -> Self;
@@ -417,184 +414,6 @@ macro_rules! collection {
     };
 }
 
-pub fn all_constraints(dir: &Path) -> Result<()> {
-    let mut map: Vec<(&str, STS<&str, ClockLabelClassic<&str>>)> = Vec::with_capacity(100);
-    map.push((
-        "coincidence",
-        Into::<STSBuilder<_>>::into(&Coincidence {
-            left: "a",
-            right: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "alternates",
-        Into::<STSBuilder<_>>::into(&Alternates {
-            left: "a",
-            right: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "causality",
-        Into::<STSBuilder<_>>::into(&Causality {
-            left: "a",
-            right: "b",
-            init: None,
-            max: None,
-        })
-        .into(),
-    ));
-    map.push((
-        "precedence",
-        Into::<STSBuilder<_>>::into(&Precedence {
-            left: "a",
-            right: "b",
-            init: None,
-            max: None,
-        })
-        .into(),
-    ));
-    map.push((
-        "causality_bounded",
-        Into::<STSBuilder<_>>::into(&Causality {
-            left: "a",
-            right: "b",
-            init: Some(2),
-            max: Some(4),
-        })
-        .into(),
-    ));
-    map.push((
-        "precedence_bounded",
-        Into::<STSBuilder<_>>::into(&Precedence {
-            left: "a",
-            right: "b",
-            init: Some(2),
-            max: Some(4),
-        })
-        .into(),
-    ));
-    map.push((
-        "causality_max",
-        Into::<STSBuilder<_>>::into(&Causality {
-            left: "a",
-            right: "b",
-            init: None,
-            max: Some(4),
-        })
-        .into(),
-    ));
-    map.push((
-        "precedence_max",
-        Into::<STSBuilder<_>>::into(&Precedence {
-            left: "a",
-            right: "b",
-            init: None,
-            max: Some(4),
-        })
-        .into(),
-    ));
-    map.push((
-        "exclusion",
-        Into::<STSBuilder<_>>::into(&Exclusion {
-            clocks: collection!("a", "b"),
-        })
-        .into(),
-    ));
-    map.push((
-        "subclocking",
-        Into::<STSBuilder<_>>::into(&Subclocking {
-            left: "a",
-            right: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "intersection",
-        Into::<STSBuilder<_>>::into(&Intersection {
-            out: "i",
-            args: collection!("a", "b"),
-        })
-        .into(),
-    ));
-    map.push((
-        "union",
-        Into::<STSBuilder<_>>::into(&Union {
-            out: "u",
-            args: collection!("a", "b"),
-        })
-        .into(),
-    ));
-    map.push((
-        "delay",
-        Into::<STSBuilder<_>>::into(&Delay {
-            out: "d",
-            base: "a",
-            delay: 2,
-            on: None,
-        })
-        .into(),
-    ));
-    map.push((
-        "inf",
-        Into::<STSBuilder<_>>::into(&Infinity {
-            out: "i",
-            left: "a",
-            right: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "sup",
-        Into::<STSBuilder<_>>::into(&Supremum {
-            out: "s",
-            left: "a",
-            right: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "sampledOn",
-        Into::<STSBuilder<_>>::into(&SampleOn {
-            out: "out",
-            trigger: "t",
-            base: "b",
-        })
-        .into(),
-    ));
-    map.push((
-        "repeat",
-        Into::<STSBuilder<_>>::into(&Repeat {
-            out: "out",
-            base: "b",
-            from: Some(2),
-            every: 3,
-            up_to: None,
-        })
-        .into(),
-    ));
-    for (name, c) in map.iter() {
-        let g: Graph<_, _> = c.into();
-        write_graph(&g, dir, name)?;
-    }
-    let spec = map.into_iter().map(|(_, v)| v).take(4).collect_vec();
-    let comb = spec.iter().map(|c| c.initial()).collect_vec();
-    write_graph(
-        &unfold_specification(&spec, &comb, true),
-        dir,
-        "trimmed.dot",
-    )?;
-    write_graph(&unfold_specification(&spec, &comb, false), dir, "full.dot")?;
-    let spec = [1, 2, 0, 3].iter().map(|i| spec[*i].clone()).collect_vec();
-    write_graph(
-        &unfold_specification(&spec, &spec.iter().map(|c| c.initial()).collect_vec(), true),
-        dir,
-        "reordered.dot",
-    )?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod test {
     #[test]
@@ -620,7 +439,7 @@ where
         None
     } else {
         Some(
-            Permutation::from_vec(
+            Permutation::oneline(
                 lehmer::Lehmer::from_decimal(perm_id as usize, spec.len())
                     .to_permutation()
                     .into_iter()

@@ -1,5 +1,5 @@
 // TODO: better function naming
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::mem::swap;
@@ -12,8 +12,7 @@ use permutation::{sort, Permutation};
 use petgraph::algo::{dijkstra, min_spanning_tree};
 use petgraph::data::FromElements;
 use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::unionfind::UnionFind;
-use petgraph::visit::{Bfs, Dfs, EdgeRef, NodeIndexable};
+use petgraph::visit::{Bfs, Dfs, EdgeRef};
 use petgraph::{Direction, Graph};
 
 use crate::lccsl::algo::{
@@ -61,65 +60,6 @@ pub fn root_by_min_outgoing(
         .unwrap()
 }
 
-fn get_components<N, E>(g: &UnGraph<N, E>) -> impl Iterator<Item = Vec<usize>> {
-    let mut vertex_sets = UnionFind::new(g.node_bound());
-    for edge in g.edge_references() {
-        let (a, b) = (edge.source(), edge.target());
-
-        vertex_sets.union(g.to_index(a), g.to_index(b));
-    }
-    let groups: HashMap<usize, Vec<usize>> = vertex_sets
-        .into_labeling()
-        .into_iter()
-        .enumerate()
-        .map(|(i, g)| (g, i))
-        .into_group_map();
-    groups.into_iter().map(|(_, v)| v)
-}
-
-fn split_merge_components<C, L, F>(spec: &[Constraint<C>], mapper: F) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    F: Fn(&[Constraint<C>]) -> Permutation,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    let conflict_map = unidirect_squished_map(spec);
-    let mut spec_perm = Vec::with_capacity(spec.len());
-    for comp_map in get_components(&conflict_map) {
-        let comp = comp_map.iter().map(|i| spec[*i].clone()).collect_vec();
-        let comp_perm = mapper(&comp);
-        spec_perm.extend(comp_perm.apply_slice(comp_map));
-    }
-
-    assert_eq!(
-        spec_perm.iter().copied().sum::<usize>(),
-        (0..spec.len()).sum(),
-        "{:?} {:?}",
-        &spec_perm,
-        &conflict_map
-    );
-    assert_eq!(
-        spec_perm.len(),
-        spec.len(),
-        "{:?} {:?}",
-        &spec_perm,
-        &conflict_map
-    );
-    Permutation::from_vec(spec_perm)
-}
-
-pub fn optimize_unconnected_by_tree_width<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    split_merge_components(spec, optimize_by_tree_width)
-}
-
 pub fn optimize_by_tree_width<C, L>(spec: &[Constraint<C>]) -> Permutation
 where
     C: Clone + Hash + Ord + Display,
@@ -140,17 +80,7 @@ where
         perm.push(nx.index());
     }
     assert_eq!(perm.len(), spec.len(), "{:?} {:?}", &perm, &tree);
-    Permutation::from_vec(perm)
-}
-
-pub fn optimize_unconnected_by_tree_depth<C, L>(spec: &[Constraint<C>]) -> Permutation
-where
-    C: Clone + Hash + Ord + Display,
-    L: Clone + Eq + Hash,
-    L: Label<C>,
-    for<'a, 'b> &'a L: BitOr<&'b L, Output = L>,
-{
-    split_merge_components(spec, optimize_by_tree_depth)
+    Permutation::oneline(perm).inverse()
 }
 
 pub fn optimize_by_tree_depth<C, L>(spec: &[Constraint<C>]) -> Permutation
@@ -185,7 +115,7 @@ where
         perm.push(nx.index());
     }
     assert_eq!(perm.len(), spec.len(), "{:?} {:?}", &perm, &tree);
-    Permutation::from_vec(perm)
+    Permutation::oneline(perm).inverse()
 }
 
 pub fn optimize_by_min_front_init_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
@@ -223,7 +153,7 @@ pub fn order_via_dijkstra(
     let node_order = dijkstra(&conflict_map, NodeIndex::new(root_idx), None, |e| {
         Weight(e.weight().solutions)
     });
-    Permutation::from_vec(
+    Permutation::oneline(
         node_order
             .into_iter()
             .map(|(v, w)| (w, v.index()))
@@ -231,6 +161,7 @@ pub fn order_via_dijkstra(
             .map(|(_, v)| v)
             .collect_vec(),
     )
+    .inverse()
 }
 
 pub fn order_by_min_front(
@@ -242,7 +173,7 @@ pub fn order_by_min_front(
 
     let mut edges = conflict_map
         .raw_edges()
-        .into_iter()
+        .iter()
         .map(|e| (e.source().index(), e.target().index(), e.weight.solutions))
         .filter(|(_, t, _)| t != &root_idx)
         .sorted_by_key(|(_, _, w)| *w)
@@ -251,11 +182,10 @@ pub fn order_by_min_front(
     let mut visited = HashSet::new();
     visited.insert(root_idx);
 
-    while edges.len() > 0 {
+    while !edges.is_empty() {
         let next = edges
             .iter()
-            .filter(|(s, _, _)| visited.contains(s))
-            .next()
+            .find(|(s, _, _)| visited.contains(s))
             .expect("failed to get next vertex: not connected?")
             .1;
         temp.clear();
@@ -264,7 +194,7 @@ pub fn order_by_min_front(
         perm.push(next);
         visited.insert(next);
     }
-    Permutation::from_vec(perm)
+    Permutation::oneline(perm).inverse()
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
@@ -292,7 +222,7 @@ pub fn root_by_tricost(
     } else {
         conflict_map
             .raw_nodes()
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(i, n)| {
                 let edge1 = conflict_map

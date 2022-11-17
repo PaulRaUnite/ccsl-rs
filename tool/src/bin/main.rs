@@ -185,16 +185,10 @@ where
         let len = spec.len();
         let spec: Vec<STS<u32, L>> = vec_into_vec(spec);
         (0..len as u8).permutations(len).map(move |perm_vec| {
-            assert!(
-                Permutation::from_vec(perm_vec.iter().map(|v| *v as usize).collect_vec()).valid()
-            );
-            let perm = lehmer::Lehmer::from_permutation(&perm_vec);
-            let perm_id = perm.to_decimal();
-            let perm = perm_vec
-                .into_iter()
-                .map(|i| spec[i as usize].clone())
-                .collect_vec();
-            (perm, *spec_id, perm_id as u64)
+            let perm_id = lehmer::Lehmer::from_permutation(&perm_vec).to_decimal();
+            let perm = Permutation::oneline(perm_vec.iter().map(|x| *x as usize).collect_vec());
+            let permuted_spec = perm.apply_slice(&spec);
+            (permuted_spec, *spec_id, perm_id as u64)
         })
     });
     let perm_comb_specs = permuted_specs
@@ -237,7 +231,7 @@ fn all_optimizations_to_parquet<'a>(
             Box::new(|spec| {
                 let mut perm = (0..spec.len()).collect_vec();
                 perm.shuffle(&mut StdRng::from_entropy());
-                Permutation::from_vec(perm)
+                Permutation::oneline(perm)
             }),
         ),
         (

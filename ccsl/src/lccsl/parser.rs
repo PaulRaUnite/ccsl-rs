@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 
 use derive_more::From;
-use pest::iterators::Pair;
-use pest::prec_climber::{Assoc, Operator, PrecClimber};
+use pest::iterators::{Pair, Pairs};
+use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use thiserror::Error;
 
@@ -283,8 +283,7 @@ fn parse_let_expr(
     let mut inner = input.into_inner();
     let mut constraints = Vec::new();
     let out: ID = inner.next().unwrap().as_str().to_string().into();
-    let expr = inner.next().unwrap();
-    let expr_out = parse_expression(expr, gen, &mut constraints);
+    let expr_out = parse_expression(inner, gen, &mut constraints);
     let last = constraints.last_mut().unwrap();
     *last = last.map(&mut |c| {
         if c == &expr_out {
@@ -297,33 +296,29 @@ fn parse_let_expr(
 }
 
 lazy_static! {
-    static ref PREC_CLIMBER: PrecClimber<Rule> = {
-        use Assoc::*;
+    static ref PREC_CLIMBER: PrattParser<Rule> = {
         use Rule::*;
-
-        PrecClimber::new(vec![
-            Operator::new(union, Left),
-            Operator::new(intersection, Left),
-            Operator::new(minus, Left),
-        ])
+        PrattParser::new()
+            .op(Op::infix(union, Assoc::Left))
+            .op(Op::infix(intersection, Assoc::Left))
+            .op(Op::infix(minus, Assoc::Left))
     };
 }
 
 fn parse_expression(
-    input: Pair<Rule>,
+    input: Pairs<Rule>,
     gen: &RefCell<RangeFrom<usize>>,
     container: &mut Vec<Constraint<ID>>,
 ) -> ID {
     let mut primaries: Vec<Constraint<ID>> = Vec::new();
-    let out = PREC_CLIMBER.climb(
-        input.into_inner(),
-        |pair: Pair<Rule>| match pair.as_rule() {
+    let out = PREC_CLIMBER
+        .map_primary(|pair: Pair<Rule>| match pair.as_rule() {
             Rule::id => pair.as_str().to_string().into(),
             Rule::prefix_expr => parse_prefix_expression(pair, gen, &mut primaries),
-            Rule::expression => parse_expression(pair, gen, &mut primaries),
+            Rule::expression => parse_expression(pair.into_inner(), gen, &mut primaries),
             _ => unreachable!(),
-        },
-        |lhs: ID, op: Pair<Rule>, rhs: ID| {
+        })
+        .map_infix(|lhs: ID, op: Pair<Rule>, rhs: ID| {
             let out: ID = gen.borrow_mut().next().unwrap().into();
             let args = BTreeSet::from_iter([lhs.clone(), rhs.clone()]);
             let c: Constraint<ID> = match op.as_rule() {
@@ -347,8 +342,8 @@ fn parse_expression(
             };
             container.push(c);
             out
-        },
-    );
+        })
+        .parse(input);
     container.extend_from_slice(&primaries);
     out
 }
