@@ -21,6 +21,6 @@ lehmer = "3"
 rand = "0.8"
 permutation = "0.4"
 anyhow = "1"
-polars = { version="0.25",features = [ "lazy", "parquet", "csv-file" ] }
+polars = { version= "0.27.2",features = [ "lazy", "parquet", "csv-file" ] }
 walkdir = "2"
 soa_derive = "0.12"

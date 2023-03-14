@@ -20,6 +20,9 @@ bitmaps = "3.2"
 lazy_static = "1.4"
 map-macro = "0.2"
 
+[dependencies.nbac_format]
+git="ssh://git@github.com/PaulRaUnite/nbac_format.git"
+
 [dependencies.derive_more]
 version = "0.99"
 default-features = false

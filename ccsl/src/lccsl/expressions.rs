@@ -1,5 +1,7 @@
+use crate::lccsl::automata::Delta;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::iter::once;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Mul, Not, Sub};
 use std::sync::Arc;
 
@@ -372,15 +374,17 @@ impl<G, R> Switch<G, R> {
 impl<V, C> IntegerExpression<V, C>
 where
     V: Clone,
-    C: Clone,
 {
-    pub fn leaves(&self, variables: &mut Vec<V>, constants: &mut Vec<C>) {
+    pub fn leaves<S>(&self, variables: &mut S)
+    where
+        S: Extend<V>,
+    {
         match self {
-            IntegerExpression::Variable(v) => variables.push(v.clone()),
-            IntegerExpression::Constant(c) => constants.push(c.clone()),
+            IntegerExpression::Variable(v) => variables.extend(once(v.clone())),
+            IntegerExpression::Constant(c) => {}
             IntegerExpression::IntegerBinary { left, right, .. } => {
-                left.leaves(variables, constants);
-                right.leaves(variables, constants);
+                left.leaves(variables);
+                right.leaves(variables);
             }
         }
     }
@@ -390,28 +394,24 @@ impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B>
 where
     VI: Clone,
     VB: Clone,
-    C: Clone,
-    B: Clone,
 {
-    pub fn leaves(
-        &self,
-        int_var: &mut Vec<VI>,
-        bool_var: &mut Vec<VB>,
-        integers: &mut Vec<C>,
-        booleans: &mut Vec<B>,
-    ) {
+    pub fn leaves<SI, SB>(&self, int_var: &mut SI, bool_var: &mut SB)
+    where
+        SI: Extend<VI>,
+        SB: Extend<VB>,
+    {
         match self {
             BooleanExpression::IntegerBinary { left, right, .. } => {
-                left.leaves(int_var, integers);
-                right.leaves(int_var, integers);
+                left.leaves(int_var);
+                right.leaves(int_var);
             }
             BooleanExpression::BooleanBinary { left, right, .. } => {
-                left.leaves(int_var, bool_var, integers, booleans);
-                right.leaves(int_var, bool_var, integers, booleans);
+                left.leaves(int_var, bool_var);
+                right.leaves(int_var, bool_var);
             }
-            BooleanExpression::Not(expr) => expr.leaves(int_var, bool_var, integers, booleans),
-            BooleanExpression::Constant(c) => booleans.push(c.clone()),
-            BooleanExpression::Variable(v) => bool_var.push(v.clone()),
+            BooleanExpression::Not(expr) => expr.leaves(int_var, bool_var),
+            BooleanExpression::Constant(c) => {}
+            BooleanExpression::Variable(v) => bool_var.extend(once(v.clone())),
         }
     }
 }

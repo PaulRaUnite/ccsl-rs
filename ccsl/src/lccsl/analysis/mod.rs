@@ -30,24 +30,8 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
         let mut counters = vec![];
         let mut invariants = vec![];
         for c in spec {
-            let invariant: Invariant<C> = match c {
-                Constraint::Causality(c) => c.into(),
-                Constraint::Precedence(c) => c.into(),
-                Constraint::SubClock(c) => c.into(),
-                Constraint::Exclusion(c) => c.into(),
-                Constraint::Infinity(c) => c.into(),
-                Constraint::Supremum(c) => c.into(),
-                Constraint::Union(c) => c.into(),
-                Constraint::Intersection(c) => c.into(),
-                Constraint::Minus(c) => c.into(),
-                Constraint::Repeat(c) => c.into(),
-                Constraint::Delay(c) => c.into(),
-                Constraint::SampleOn(c) => c.into(),
-                Constraint::Diff(c) => c.into(),
-            };
-            invariant
-                .0
-                .leaves(&mut counters, &mut clocks, &mut vec![], &mut vec![]);
+            let invariant: Invariant<C> = c.into();
+            invariant.0.leaves(&mut counters, &mut clocks);
             invariants.push(invariant);
         }
         ProgramEffects {
@@ -75,6 +59,25 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
 #[derive(Debug, Clone, From)]
 pub struct Invariant<C>(pub BooleanExpression<Delta<C>, C>);
 
+impl<C: Clone> From<&'_ Constraint<C>> for Invariant<C> {
+    fn from(value: &'_ Constraint<C>) -> Self {
+        match value {
+            Constraint::Causality(c) => c.into(),
+            Constraint::Precedence(c) => c.into(),
+            Constraint::SubClock(c) => c.into(),
+            Constraint::Exclusion(c) => c.into(),
+            Constraint::Infinity(c) => c.into(),
+            Constraint::Supremum(c) => c.into(),
+            Constraint::Union(c) => c.into(),
+            Constraint::Intersection(c) => c.into(),
+            Constraint::Minus(c) => c.into(),
+            Constraint::Repeat(c) => c.into(),
+            Constraint::Delay(c) => c.into(),
+            Constraint::SampleOn(c) => c.into(),
+            Constraint::Diff(c) => c.into(),
+        }
+    }
+}
 impl<C: Clone> From<&'_ Causality<C>> for Invariant<C> {
     fn from(c: &'_ Causality<C>) -> Self {
         IntegerExpression::var(Delta(c.left.clone(), c.right.clone()))
@@ -185,8 +188,7 @@ impl<C: Ord + Clone + Debug> Invariant<C> {
     pub(crate) fn check<const N: usize>(&self, traces: BTreeMap<C, [u8; N]>) -> bool {
         let mut counters = vec![];
         let mut clocks = vec![];
-        self.0
-            .leaves(&mut counters, &mut clocks, &mut vec![], &mut vec![]);
+        self.0.leaves(&mut counters, &mut clocks);
         for c in clocks.iter() {
             if !traces.contains_key(c) {
                 panic!("trace for clock {:?} is not supplied", c)

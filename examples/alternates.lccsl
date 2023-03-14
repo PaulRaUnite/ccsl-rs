@@ -1,0 +1,8 @@
+Specification Alternates {
+    Clock a,b,c
+    [
+        Precedence a < b
+        Precedence b < a_d
+        a_d = a $ 1
+    ]
+}

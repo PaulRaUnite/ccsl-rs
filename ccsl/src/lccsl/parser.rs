@@ -9,8 +9,6 @@ use thiserror::Error;
 
 use crate::lccsl::constraints::*;
 use itertools::Itertools;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
 use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::ops::RangeFrom;
@@ -43,7 +41,7 @@ pub enum ParseError {
 //  for reasons of encoding/decoding roundtrip: some constraints
 //  are split and so do not preserve the initial structure.
 
-fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
+pub fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
     let mut name = "".to_owned();
     let mut clocks = HashSet::new();
@@ -118,12 +116,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
         })
         .collect();
     // FIXME: random as prefix for generated clocks is cringe
-    let prefix: String = thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(4)
-        .map(char::from)
-        .collect();
-    let prefix = format!("g{}_", prefix);
+    let prefix = "gc_".to_owned();
     if unique_clocks.contains(&prefix) {
         panic!("couldn't generate prefix for numeric clocks")
     }
@@ -270,8 +263,9 @@ fn parse_exclusion(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     constraints.into_iter()
 }
 
+// TODO: replace String with &'a str
 #[derive(Debug, Clone, Hash, Ord, Eq, PartialOrd, PartialEq, From)]
-enum ID {
+pub enum ID {
     C(String),
     G(usize),
 }

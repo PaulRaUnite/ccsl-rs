@@ -1,0 +1,18 @@
+[package]
+name = "nbac"
+version = "0.1.0"
+authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ccsl={path="../ccsl"}
+structopt = "0.3"
+anyhow = "1"
+itertools = "0.10.5"
+
+[dependencies.derive_more]
+version = "0.99"
+default-features = false
+features = ["from", "into"]
