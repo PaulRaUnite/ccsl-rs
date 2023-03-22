@@ -45,6 +45,9 @@ struct DataEntry {
 fn gen(dir: &Path, out: &Path) -> Result<()> {
     let mut wrt = csv::Writer::from_path(out)?;
     let mut errs = csv::Writer::from_path("/home/ptokarie/code/ccsl-rs/examples/err.csv")?;
+    let mut crashes = 0;
+    let mut results = vec![];
+    let mut count = 0;
     for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
         if !entry.file_type().is_file() {
             continue;
@@ -59,6 +62,8 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
         if !filename.ends_with(".lc") {
             continue;
         }
+        count += 1;
+        println!("{} {}", count, &filename);
         let nbac_file = entry.path().with_extension("lc.nbac");
         let output = Command::new("/home/ptokarie/code/ccsl-rs/target/release/ccsl2nbac")
             .arg(entry.path())
@@ -70,10 +75,15 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
                 from_utf8(&output.stdout).unwrap(),
                 from_utf8(&output.stderr).unwrap(),
             ])?;
+
+            crashes += 1;
+            println!("ccsl2nbac crashed: {}", &filename);
             continue;
         }
         let output = Command::new("/home/ptokarie/Applications/nbac/nbacg.opt")
             .env("LD_LIBRARY_PATH", "/home/ptokarie/Applications/nbac/")
+            .arg("-postpre") // TODO: fixes crashes, but why??
+            .arg("-drelation 1")
             .arg(&nbac_file)
             .output()?;
         if !output.stderr.is_empty() {
@@ -82,6 +92,8 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
                 from_utf8(&output.stdout).unwrap(),
                 from_utf8(&output.stderr).unwrap(),
             ])?;
+            crashes += 1;
+            println!("NBAC crashed: {}", &filename);
             continue;
         }
         let text = from_utf8(&output.stdout).unwrap();
@@ -113,15 +125,33 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
         };
 
         wrt.serialize(DataEntry {
-            filename,
+            filename: filename.clone(),
             mg_out,
             nbac_out,
             // mg_time: (),
             // nbac_time: (),
         })?;
+        results.push(DataEntry {
+            filename,
+            mg_out,
+            nbac_out,
+            // mg_time: (),
+            // nbac_time: (),
+        });
     }
     wrt.flush()?;
 
+    println!("Errors: {}", crashes);
+    for e in results {
+        if e.mg_out != e.nbac_out {
+            // different results
+            if e.mg_out {
+                println!("REGRESSION: {}", e.filename);
+            } else {
+                println!("IMPROVEMENT: {}", e.filename);
+            }
+        }
+    }
     Ok(())
 }
 fn plot(csv: &Path) -> Result<()> {
