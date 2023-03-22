@@ -12,7 +12,7 @@ structopt = "0.3"
 petgraph = "0.6"
 itertools = "0.10"
 serde = { version = "1", features = ["derive"] }
-csv = "1.1"
+csv = "1.2"
 num = "0.4"
 rayon = "1.5"
 parquet = "27"

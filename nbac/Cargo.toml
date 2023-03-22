@@ -10,7 +10,12 @@ edition = "2021"
 ccsl={path="../ccsl"}
 structopt = "0.3"
 anyhow = "1"
-itertools = "0.10.5"
+itertools = "0.10"
+walkdir = "2"
+csv = "1.2"
+chrono = "0.4"
+regex = "1.7.1"
+serde = { version = "1", features = ["derive"] }
 
 [dependencies.derive_more]
 version = "0.99"

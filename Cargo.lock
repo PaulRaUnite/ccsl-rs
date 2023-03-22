@@ -1278,9 +1278,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ccsl",
+ "chrono",
+ "csv",
  "derive_more",
  "itertools",
+ "regex",
+ "serde",
  "structopt",
+ "walkdir",
 ]
 
 [[package]]
