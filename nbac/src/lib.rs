@@ -2,9 +2,8 @@
 extern crate derive_more;
 
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum StateDeclaration<V> {
@@ -30,8 +29,8 @@ pub struct Spec<V> {
     pub states: Vec<StateDeclaration<V>>,
     pub inputs: Vec<StateDeclaration<V>>,
     pub locals: Vec<StateDeclaration<V>>,
-    pub definitions: HashMap<V, Expression<V>>,
-    pub transitions: HashMap<V, Expression<V>>,
+    pub definitions: BTreeMap<V, Expression<V>>,
+    pub transitions: BTreeMap<V, Expression<V>>,
     pub assertion: Option<BooleanExpression<V>>,
     pub initial_state: BooleanExpression<V>,
     pub final_state: BooleanExpression<V>,
@@ -39,7 +38,6 @@ pub struct Spec<V> {
 
 impl<V: Display + Ord> Display for Spec<V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO: sort group declarations by type?
         fn declarations<V: Display + Ord>(
             f: &mut Formatter<'_>,
             group: &str,
@@ -93,8 +91,8 @@ impl<V> Spec<V> {
             states: vec![],
             inputs: vec![],
             locals: vec![],
-            definitions: HashMap::new(),
-            transitions: HashMap::new(),
+            definitions: BTreeMap::new(),
+            transitions: BTreeMap::new(),
             assertion: None,
             initial_state: initial_state.into(),
             final_state: final_state.into(),
@@ -103,7 +101,7 @@ impl<V> Spec<V> {
 
     pub fn transit(&mut self, var: V, expr: impl Into<Expression<V>>)
     where
-        V: Display + Hash + Eq,
+        V: Display + Ord,
     {
         let expr = expr.into();
         println!("added {}", &expr);
