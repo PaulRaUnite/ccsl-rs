@@ -111,6 +111,7 @@ fn translate_spec(spec: &Specification<Variable>) -> Spec<Variable> {
         inv.0.leaves(&mut states, &mut clocks);
         clock_restrictions.push(convertb(&inv.0));
     }
+    clocks.extend(spec.iter().flat_map(|c| c.clocks().into_iter().cloned()));
     nbac_spec
         .inputs
         .extend(clocks.iter().map(|v| StateDeclaration::Bool(v.clone())));
@@ -157,8 +158,7 @@ fn add_boundness_goal(mut spec: Spec<Variable>, bound: u32) -> Spec<Variable> {
         "ok".to_owned(),
         init.if_then_elseb(
             true,
-            ok & spec
-                .states
+            spec.states
                 .iter()
                 .filter_map(|s| match s {
                     StateDeclaration::Bool(_) => None,
@@ -168,7 +168,7 @@ fn add_boundness_goal(mut spec: Spec<Variable>, bound: u32) -> Spec<Variable> {
                     }
                 })
                 .reduce(BitAnd::bitand)
-                .unwrap(),
+                .map_or(ok.clone(), |v| ok & v),
         ),
     );
     spec
@@ -211,6 +211,8 @@ fn add_deadlock_goal(mut spec: Spec<Variable>, step_limit: i64) -> Spec<Variable
             .if_then_else(lock_count.clone() + 1i64.into(), lock_count.clone()),
         ),
     );
+    spec.states
+        .push(StateDeclaration::Integer("lock_count".to_owned()));
     spec.assertion = Some(match spec.assertion.unwrap() {
         nbac::BooleanExpression::BooleanBinary { kind, left, right } => {
             nbac::BooleanExpression::BooleanBinary {
@@ -242,7 +244,7 @@ fn main() -> Result<()> {
     let args = App::from_args();
     let spec: Specification<String> = parse_to_string(&read_to_string(args.spec)?)?.into();
 
-    let nbac_spec = add_deadlock_goal(translate_spec(&spec), 4);
+    let nbac_spec = add_boundness_goal(translate_spec(&spec), 256);
 
     let mut out_file = BufWriter::new(File::create(&args.out)?);
     write!(&mut out_file, "{}", nbac_spec)?;
