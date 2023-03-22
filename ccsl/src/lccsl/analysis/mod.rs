@@ -80,8 +80,10 @@ impl<C: Clone> From<&'_ Constraint<C>> for Invariant<C> {
 }
 impl<C: Clone> From<&'_ Causality<C>> for Invariant<C> {
     fn from(c: &'_ Causality<C>) -> Self {
-        IntegerExpression::var(Delta(c.left.clone(), c.right.clone()))
-            .more_eq(0)
+        let a = BooleanExpression::var(c.left.clone());
+        let b = BooleanExpression::var(c.right.clone());
+        (IntegerExpression::var(Delta(c.left.clone(), c.right.clone())).eq(0) & b)
+            .implies(a)
             .into()
     }
 }
@@ -89,7 +91,7 @@ impl<C: Clone> From<&'_ Precedence<C>> for Invariant<C> {
     fn from(c: &'_ Precedence<C>) -> Self {
         let ab = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let b = BooleanExpression::var(c.right.clone());
-        (ab.more_eq(0) & ab.eq(0).implies(!b)).into()
+        (ab.eq(0).implies(!b)).into()
     }
 }
 
@@ -103,7 +105,8 @@ impl<C: Clone> From<&'_ Subclocking<C>> for Invariant<C> {
 
 impl<C: Clone> From<&'_ Exclusion<C>> for Invariant<C> {
     fn from(c: &'_ Exclusion<C>) -> Self {
-        c.clocks
+        // TODO: probably doesn't allow empty step
+        (c.clocks
             .iter()
             .tuple_combinations::<(_, _)>()
             .map(|(x, y)| {
@@ -111,41 +114,53 @@ impl<C: Clone> From<&'_ Exclusion<C>> for Invariant<C> {
                 let y = BooleanExpression::var(y.clone());
                 !(x & y)
             })
-            .reduce(|x, y| x & y)
+            .reduce(BitAnd::bitand)
             .unwrap()
-            .into()
+            | c.clocks
+                .iter()
+                .cloned()
+                .map(BooleanExpression::var)
+                .map(Not::not)
+                .reduce(BitAnd::bitand)
+                .unwrap())
+        .into()
     }
 }
+
 impl<C: Clone> From<&'_ Infinity<C>> for Invariant<C> {
     fn from(_: &'_ Infinity<C>) -> Self {
         unimplemented!()
     }
 }
+
 impl<C: Clone> From<&'_ Supremum<C>> for Invariant<C> {
     fn from(_: &'_ Supremum<C>) -> Self {
         unimplemented!()
     }
 }
+
 impl<C: Clone> From<&'_ Union<C>> for Invariant<C> {
     fn from(c: &'_ Union<C>) -> Self {
+        let out = BooleanExpression::var(c.out.clone());
         c.args
             .iter()
             .cloned()
             .map(BooleanExpression::var)
-            .reduce(|x, y| x | y)
-            .map(|e| e.eq(BooleanExpression::var(c.out.clone())))
+            .reduce(BitOr::bitor)
+            .map(|e| e.eq(out))
             .unwrap()
             .into()
     }
 }
 impl<C: Clone> From<&'_ Intersection<C>> for Invariant<C> {
     fn from(c: &'_ Intersection<C>) -> Self {
+        let out = BooleanExpression::var(c.out.clone());
         c.args
             .iter()
             .cloned()
             .map(BooleanExpression::var)
-            .reduce(|x, y| x & y)
-            .map(|e| e.eq(BooleanExpression::var(c.out.clone())))
+            .reduce(BitAnd::bitand)
+            .map(|e| e.eq(out))
             .unwrap()
             .into()
     }
@@ -170,7 +185,7 @@ impl<C: Clone> From<&'_ Delay<C>> for Invariant<C> {
         let a = BooleanExpression::var(c.base.clone());
         let b = BooleanExpression::var(c.out.clone());
         let d = c.delay as i64;
-        Invariant(ab.more_eq(0) & ((ab.eq(d) & a.eq(b.clone())) | (ab.less(d) & !b)))
+        Invariant((ab.eq(d) & a.eq(b.clone())) | (ab.less(d) & !b))
     }
 }
 impl<C: Clone> From<&'_ SampleOn<C>> for Invariant<C> {
