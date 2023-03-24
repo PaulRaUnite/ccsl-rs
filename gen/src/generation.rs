@@ -62,6 +62,35 @@ pub fn star(nodes: usize, width: usize) -> Option<DiGraph<usize, ()>> {
     }
 }
 
+// stolen from https://docs.rs/graphalgs/latest/src/graphalgs/generate/randomg.rs.html#38-69
+pub fn random_digraph(
+    nodes: usize,
+    nedges: usize,
+    mut rng: impl Rng,
+) -> Option<DiGraph<usize, ()>> {
+    if nodes == 0 {
+        return None;
+    }
+
+    if nedges > nodes * (nodes - 1) {
+        return None;
+    }
+
+    let mut graph = DiGraph::with_capacity(nodes, nedges);
+    let mut count = 0;
+
+    while count < nedges {
+        let i = NodeIndex::new(rng.gen_range(0..nodes));
+        let j = NodeIndex::new(rng.gen_range(0..nodes));
+
+        if i != j && !graph.contains_edge(i, j) {
+            graph.add_edge(i, j, ());
+            count += 1;
+        }
+    }
+    Some(graph)
+}
+
 pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
     spec.extend(g.raw_edges().into_iter().map(|e| {
