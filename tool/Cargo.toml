@@ -15,7 +15,7 @@ itertools = "0.10"
 serde = { version = "1", features = ["derive"] }
 csv = "1.1"
 num = "0.4"
-rayon = "1.5"
+rayon = "1.7"
 parquet = "27"
 arrow = "27"
 lehmer = "3"

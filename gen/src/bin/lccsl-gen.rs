@@ -26,7 +26,6 @@ enum Cmd {
     /// Subdirectory is created for easier separation
     Dir {
         /// Path to a directory to generate CCSL specifications
-        #[structopt(short, long)]
         dir: PathBuf,
         /// Size of specifications to generate
         #[structopt(short, long)]
@@ -40,18 +39,20 @@ enum Cmd {
         /// Outputs directly into the specified directory without creating a subdirectory for specific starting seed
         #[structopt(short, long)]
         flatten: bool,
+        /// Flag to disable parallelism
+        #[structopt(short, long)]
+        no_par: bool,
     },
     /// Generate one specification
     One {
+        /// File path to the output file, stdout if omitted
+        file: Option<PathBuf>,
         /// Size of the specification
         #[structopt(short, long)]
         size: usize,
         /// Seed of the specification
         #[structopt(short, long)]
         seed: u64,
-        /// File path to the output file, stdout if omitted
-        #[structopt(short, long, conflicts_with = "stdout")]
-        file: Option<PathBuf>,
     },
 }
 
@@ -72,12 +73,23 @@ fn write_spec(mut w: impl Write, seed: u64, size: usize) -> Result<()> {
     Ok(())
 }
 
-fn generate_dir(dir: &Path, specs: impl Iterator<Item = (u64, usize)> + Send) -> Result<()> {
-    let mut results: Vec<Result<()>> = specs
-        .par_bridge() // PARALLELIZATION HAPPEN HERE
-        .map(|(seed, size)| generate_spec(&dir, seed, size))
-        .filter(|r| r.is_err())
-        .collect();
+fn generate_dir(
+    dir: &Path,
+    specs: impl Iterator<Item = (u64, usize)> + Send,
+    parallel: bool,
+) -> Result<()> {
+    let mut results: Vec<Result<()>> = if parallel {
+        specs
+            .par_bridge()
+            .map(|(seed, size)| generate_spec(dir, seed, size))
+            .filter(|r| r.is_err())
+            .collect()
+    } else {
+        specs
+            .map(|(seed, size)| generate_spec(dir, seed, size))
+            .filter(|r| r.is_err())
+            .collect()
+    };
     if !results.is_empty() {
         results.pop().unwrap()
     } else {
@@ -95,6 +107,7 @@ fn main() -> Result<()> {
             amount,
             seed,
             flatten,
+            no_par,
         } => {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             if !dir.exists() {
@@ -111,7 +124,7 @@ fn main() -> Result<()> {
                 }
                 dir
             };
-            generate_dir(&dir, (0..amount).map(|_| (rng.gen(), size)))?;
+            generate_dir(&dir, (0..amount).map(|_| (rng.gen(), size)), !no_par)?;
         }
         Cmd::One { size, seed, file } => {
             if let Some(filepath) = file {

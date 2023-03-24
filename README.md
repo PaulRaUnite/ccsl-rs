@@ -4,13 +4,12 @@
 Please go to https://www.rust-lang.org/tools/install and follow the instructions 
 for your platform.
 
-For Linux, it is just an oneliner, and one can test if everything installed correctly by 
-opening new terminal window and call `cargo`.
+One can test if everything installed correctly by opening new terminal window and calling `cargo`.
 
 Be sure Rust env variables were added to `~/.profile`.
-Session restart (log out/log in;system restart) may be needed.
+Session restart (log out/log in;system restart) may be required.
 
-## Optimization experiment
+## Optimization and approximation of CCSL solving
 How to reproduce:
 1. run `cargo run --release --bin main -- generate ./<path to data>/`,
 2. run `cargo run --release --bin main -- analyze ./<path to data>/<dataset>/`
@@ -20,10 +19,9 @@ How to reproduce:
 
 Prerequisites: Rust and Git installed, few Gb of free disk space (for dependencies and module object files).
 
-Using the tool is extremely easy:
+Getting started:
 ```bash
 git clone https://github.com/PaulRaUnite/ccsl-rs.git
-cd ./ccsl-rs/tool
 cargo run --release --bin lccsl-gen -- --help
 ```
 
@@ -31,28 +29,27 @@ or
 
 ```bash
 git clone https://github.com/PaulRaUnite/ccsl-rs.git
-cd ./ccsl-rs/tool
 cargo build --release --bin lccsl-gen
-cd ..
-cd ./target/release/
-./lccsl-gen --help
+./target/release/lccsl-gen --help
 # or copy lccsl-gen(.exe?) to anywhere you like and run
 ```
 
-> WARNING: The tool uses parallelization of generation by default, comment (`//`) line 
-> with `.par_bridge()` in file `lccsl-gen.rs` if not desired/causes problems.
-
 ### Typical usage
-> `./lccsl-gen` can be replaced by `cargo run --release --bin lccsl-gen --`
+> `cargo run --release --bin lccsl-gen -- one --seed=0 --size=5`
 
-> To obtain a random seed (at least in Linux (Unix?)), one can utilize `echo $RANDOM` or directly as option
-> `./lccsl-gen dir --dir=./specs/ --amount=3 --seed=$RANDOM --size=5`.
-> The seed then will be found in the name of the generated directory, if flag `--flatten` is not used.
+which writes a specification into the stdout. 
 
+To obtain a random seed (at least in Linux (Unix?)), one can utilize `echo $RANDOM` or directly as an argument
+> `cargo run --release --bin lccsl-gen -- dir ./specs/ --amount=3 --seed=$RANDOM --size=5`.
 
+The seed then can be found in the name of the generated directory, if flag `--flatten` is not used.
+
+The tool uses parallelization of specification generation and writing into files. Can be disabled with `no_par` option.
+
+#### Examples
 1. generate a directory of random specifications
     ```bash
-   ./lccsl-gen dir --dir=./specs/ --amount=3 --seed=12345 --size=5
+   cargo run --release --bin lccsl-gen -- dir ./specs/ --amount=3 --seed=12345 --size=5
     ```
     result:
    ```
@@ -75,11 +72,11 @@ cd ./target/release/
     ]
    }
    ```
-2. generate one specification (for possible integration purposes)
+2. generate one specification (can be used to rebuild specification if only its name is available, i.e seed and size)
    ```bash
-   ./lccsl-gen one --seed=12345 --size=5
+   cargo run --release --bin lccsl-gen -- one --seed=12345 --size=5
    ```
-   output
+   stdout:
    ```text
    Specification spec_5_12345 {
     Clock c0,c1,c3,c5,c6
@@ -95,13 +92,13 @@ cd ./target/release/
    With seed `10082841213727481447` same output as in the file `5-10082841213727481447.lc`.
 
 All the options are documented and can be retrieved
-by calling `./lccsl-gen --help` or `./lccsl-gen <subcommand> --help`.
+by calling `cargo run --release --bin lccsl-gen -- --help` or `cargo run --release --bin lccsl-gen -- <subcommand> --help`.
 
 ### General algorithm
 `dir` subcommand:
-1. Initialize a random generator with seed
-2. Generate a list of seeds by the generator
-3. Iteratively, using these seeds and provided size generate specifications
+1. Initialize a random generator with the provided seed
+2. Generate a list of seeds by the generator, of size `amount`
+3. Iteratively, using these seeds and provided size, generate and write specifications
 
 `one` subcommand (basically **the** algorithm):
 1. Initialize a random generator with seed
