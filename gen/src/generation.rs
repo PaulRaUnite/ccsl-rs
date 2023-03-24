@@ -4,7 +4,7 @@ use itertools::Itertools;
 use petgraph::prelude::*;
 use rand::prelude::*;
 
-use crate::lccsl::constraints::{
+use ccsl::lccsl::constraints::{
     Causality, Constraint, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
     Subclocking, Supremum, Union,
 };

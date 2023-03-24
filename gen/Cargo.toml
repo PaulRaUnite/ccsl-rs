@@ -1,0 +1,16 @@
+[package]
+name = "gen"
+version = "0.1.0"
+authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ccsl={path="../ccsl"}
+petgraph = "0.6"
+itertools = "0.10"
+rand = "0.8"
+structopt = "0.3"
+rayon = "1.5"
+anyhow = "1"

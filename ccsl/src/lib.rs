@@ -20,8 +20,6 @@ pub mod lccsl {
 
     pub mod vizualization;
 
-    pub mod generation;
-
     pub mod optimization;
 
     pub mod format;

@@ -2,15 +2,15 @@ use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use structopt::StructOpt;
 
 use ccsl::lccsl::format::to_lccsl;
-use ccsl::lccsl::generation::random_connected_specification;
 
 use anyhow::{anyhow, Result};
+use gen::generation::random_connected_specification;
+use itertools::Itertools;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "lccsl-gen", about = "LightCCSL specification generator")]
@@ -78,7 +78,7 @@ fn generate_dir(dir: &Path, specs: impl Iterator<Item = (u64, usize)> + Send) ->
         .map(|(seed, size)| generate_spec(&dir, seed, size))
         .filter(|r| r.is_err())
         .collect();
-    if results.len() != 0 {
+    if !results.is_empty() {
         results.pop().unwrap()
     } else {
         Ok(())

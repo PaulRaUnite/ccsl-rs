@@ -899,6 +899,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ccsl",
+ "itertools",
+ "petgraph",
+ "rand",
+ "rayon",
+ "structopt",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2213,6 +2226,7 @@ dependencies = [
  "arrow",
  "ccsl",
  "csv",
+ "gen",
  "itertools",
  "lehmer",
  "num",
