@@ -15,19 +15,19 @@ use walkdir::WalkDir;
 
 use anyhow::Context;
 use ccsl::lccsl::algo::generate_combinations;
-use ccsl::lccsl::automata::label::StaticBitmapLabel;
-use ccsl::lccsl::automata::STS;
-use ccsl::lccsl::constraints::{Causality, Constraint, Delay, Precedence, Union};
 use ccsl::lccsl::optimization::{
     optimize, optimize_by_min_front_init_weights, optimize_by_min_front_with_tricost_root,
     optimize_by_sort_weights, optimize_by_tree_depth, optimize_by_tree_width, order_by_min_front,
     order_via_dijkstra, root, root_by_min_outgoing, root_by_tricost,
 };
 use gen::generation::{
-    cycle_spec, cycle_with_spike, cycle_with_tail, cycle_with_tail_and_spike,
-    random_connected_specification, to_precedence_spec, to_subclocking_spec,
+    cycle_with_tail_and_spike, random_connected_specification, to_precedence_spec,
+    to_subclocking_spec,
 };
 use gen::graph::{star, TreeIterator};
+use kernel::automata::label::StaticBitmapLabel;
+use kernel::automata::STS;
+use kernel::constraints::{Causality, Constraint, Delay, Precedence, Union};
 use tool::{
     analyze_specification, analyze_specification_combination, analyze_squish_specification,
     collection, gen_spec, gen_spec_flat, inverse_graph, stream_to_parquet, stream_to_parquet_flat,
@@ -67,19 +67,27 @@ fn main() -> Result<()> {
 fn generate(data_dir: &Path) -> Result<()> {
     analyse_specs(
         &data_dir.join("circle_tail"),
-        gen_spec_flat(3..=4, |size| cycle_with_tail(size)),
+        gen_spec_flat(3..=4, |size| {
+            (0..size).map(move |tail| cycle_with_tail_and_spike(size, tail, 0, 1))
+        }),
     )?;
     analyse_specs(
         &data_dir.join("circle_spike"),
-        gen_spec_flat(3..=4, |size| cycle_with_spike(size)),
+        gen_spec_flat(3..=4, |size| {
+            (0..size).map(move |spike| cycle_with_tail_and_spike(size, 0, spike, 1))
+        }),
     )?;
     analyse_specs(
         &data_dir.join("circle_spike_tail"),
-        gen_spec_flat(3..=4, |size| cycle_with_tail_and_spike(size)),
+        gen_spec_flat(3..=4, |size| {
+            (1..size)
+                .cartesian_product(1..size)
+                .map(move |(tail, spike)| cycle_with_tail_and_spike(size, tail, spike, 1))
+        }),
     )?;
     analyse_specs(
-        &data_dir.join("circle"),
-        gen_spec(3..=8, |size| cycle_spec(size)),
+        &data_dir.join("cycle"),
+        gen_spec(3..=8, |size| cycle_with_tail_and_spike(size, 0, 0, 0)),
     )?;
     analyse_specs(
         &data_dir.join("star/precedence"),

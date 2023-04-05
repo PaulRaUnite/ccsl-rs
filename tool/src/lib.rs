@@ -27,9 +27,9 @@ use ccsl::lccsl::algo::{
     approx_conflict_map, complexity_from_graph, find_solutions, generate_combinations,
     limit_conflict_map, CountingVisitor,
 };
-use ccsl::lccsl::automata::label::Label;
-use ccsl::lccsl::automata::{StateRef, STS};
-use ccsl::lccsl::constraints::Constraint;
+use kernel::automata::label::Label;
+use kernel::automata::{StateRef, STS};
+use kernel::constraints::Constraint;
 
 pub trait SoAExt<T> {
     fn with_capacity(size: usize) -> Self;

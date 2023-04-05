@@ -1,10 +1,10 @@
-use ccsl::lccsl::automata::label::StaticBitmapLabel;
-use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::optimization::{
     optimize_by_min_front_init_weights, optimize_by_min_front_init_weights_root,
 };
 use gen::generation::random_connected_specification;
 use itertools::Itertools;
+use kernel::automata::label::StaticBitmapLabel;
+use kernel::automata::STS;
 use std::error::Error;
 use structopt::StructOpt;
 use tool::{analyze_specification, vec_into_vec};

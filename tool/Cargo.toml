@@ -9,6 +9,7 @@ edition = "2021"
 [dependencies]
 ccsl={path="../ccsl"}
 gen={path="../gen"}
+kernel={path="../kernel"}
 structopt = "0.3"
 petgraph = "0.6"
 itertools = "0.10"

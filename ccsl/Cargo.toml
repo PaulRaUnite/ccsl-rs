@@ -7,18 +7,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest = "2.4"
-pest_derive = "2.4"
 thiserror = "1.0"
 petgraph = "0.6"
 itertools = "0.10"
 num = "0.4"
 rand = "0.8"
 permutation = "0.4"
-lazy_static = "1.4"
 map-macro = "0.2"
 dot = "0.1.4"
 kernel={path="../kernel"}
+lccsl={path="../lccsl"}
 
 [dependencies.derive_more]
 version = "0.99"

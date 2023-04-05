@@ -11,8 +11,8 @@ use lccsl::format::render_lccsl;
 
 use anyhow::{anyhow, Result};
 use gen::generation::{
-    point_backpressure, precedence_trees, random_connected_specification, to_precedence_spec,
-    trees_with_backpressure, NetworkParams,
+    cycle_with_tail_and_spike, point_backpressure, precedence_trees,
+    random_connected_specification, to_precedence_spec, trees_with_backpressure, NetworkParams,
 };
 use gen::graph::random_processing_network;
 use itertools::Itertools;
@@ -98,9 +98,9 @@ enum Family {
         /// Size of tail (from 0 to the argument)
         #[structopt(short, long)]
         tail_up_to: usize,
-        /// Size of head (from 0 to the argument)
+        /// Size of spike (from 0 to the argument)
         #[structopt(short, long)]
-        head_up_to: usize,
+        spike_up_to: usize,
         /// Add backpressure constraint (between head and tail)
         #[structopt(short, long)]
         backpressure: Option<NonZeroUsize>,
@@ -254,21 +254,35 @@ fn main() -> Result<()> {
                 Family::Cycle {
                     size,
                     tail_up_to,
-                    head_up_to,
+                    spike_up_to,
                     backpressure,
-                } => {}
+                } => generate_to_dir(
+                    &dir,
+                    (0..tail_up_to)
+                        .cartesian_product(0..spike_up_to)
+                        .map(|(tail, spike)| {
+                            let mut spec = cycle_with_tail_and_spike(size, tail, spike_up_to, 1);
+                            if let Some(buffer) = backpressure {
+                                spec.extend(point_backpressure(
+                                    0,
+                                    size + tail_up_to + spike_up_to,
+                                    buffer.get(),
+                                ))
+                            }
+                            (format!("cycle_{}_{}_{}", tail, size, spike), spec)
+                        }),
+                )?,
             }
         }
         Cmd::One { size, seed, file } => {
             let spec_name = format!("rand_{}_{}", size, seed);
             let spec = random_connected_specification(seed, size, true);
-            let output: Box<dyn Write> = if let Some(filepath) = file {
+            if let Some(filepath) = file {
                 let file = OpenOptions::new().write(true).create(true).open(filepath)?;
-                Box::new(BufWriter::new(file))
+                write!(BufWriter::new(file), "{}", &render_lccsl(&spec, &spec_name))?;
             } else {
-                Box::new(std::io::stdout())
+                write!(std::io::stdout(), "{}", &render_lccsl(&spec, &spec_name))?;
             };
-            write!(output, "{}", &render_lccsl(&spec, &spec_name))?;
         }
     }
     Ok(())

@@ -2,12 +2,12 @@ use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::{Interval, IntervalImmediateNarrowing, StandardWidening};
 use crate::interpretation::{Lattice, SequenceLimiter};
 use crate::lccsl::analysis::{assume, interpret, ExecutionState, Invariant, StateWidening, Step};
-use crate::lccsl::parser::{parse_to_string, ParseError};
 use kernel::automata::Delta;
 use kernel::constraints::{
     Causality, Delay, Exclusion, Intersection, Minus, Precedence, Subclocking, Union,
 };
 use kernel::expressions::{BooleanExpression, IntegerExpression};
+use lccsl::parser::{parse_to_string, ParseError};
 use map_macro::map;
 use std::collections::{BTreeMap, HashMap};
 

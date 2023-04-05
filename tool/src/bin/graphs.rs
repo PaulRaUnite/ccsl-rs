@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use ccsl::lccsl::algo::{squished_conflict_map, squished_limit_map, unidirect_squished_map};
-use ccsl::lccsl::automata::label::StaticBitmapLabel;
-use ccsl::lccsl::constraints::{Causality, Constraint, Delay, Precedence};
+use kernel::automata::label::StaticBitmapLabel;
+use kernel::constraints::{Causality, Constraint, Delay, Precedence};
 use tool::write_graph;
 
 fn main() -> Result<(), Box<dyn Error>> {

@@ -1,4 +1,4 @@
-use crate::lccsl::parser::Specification;
+use kernel::constraints::Specification;
 use std::fmt;
 use std::fmt::{Display, Write};
 

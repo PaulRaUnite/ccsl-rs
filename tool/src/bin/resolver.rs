@@ -1,9 +1,9 @@
 use ccsl::lccsl::algo::{squished_conflict_map, unidirect_squished_map};
-use ccsl::lccsl::automata::label::StaticBitmapLabel;
-use ccsl::lccsl::automata::STS;
 use ccsl::lccsl::vizualization::unfold_specification;
 use gen::generation::random_connected_specification;
 use itertools::Itertools;
+use kernel::automata::label::StaticBitmapLabel;
+use kernel::automata::STS;
 use petgraph::algo::min_spanning_tree;
 use petgraph::data::FromElements;
 use petgraph::graph::UnGraph;

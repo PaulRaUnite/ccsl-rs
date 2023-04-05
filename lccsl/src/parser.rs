@@ -440,7 +440,7 @@ impl<T> From<Specification<T>> for kernel::constraints::Specification<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::format::render_lccsl;
+    use crate::format::render_lccsl;
 
     #[test]
     fn it_works() {

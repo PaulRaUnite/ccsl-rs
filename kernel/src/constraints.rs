@@ -806,7 +806,7 @@ where
 }
 
 #[derive(Debug, From, Into, Clone)]
-pub struct Specification<C>(Vec<Constraint<C>>);
+pub struct Specification<C>(pub Vec<Constraint<C>>);
 
 impl<C> Constraint<C> {
     pub fn map<B, F>(&self, f: F) -> Constraint<B>

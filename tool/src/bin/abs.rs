@@ -1,6 +1,6 @@
 use ccsl::interpretation::interval::{IntervalImmediateNarrowing, StandardWidening};
 use ccsl::lccsl::analysis::{assume, interpret, Invariant, StateWidening};
-use ccsl::lccsl::constraints::{Delay, Precedence, Specification};
+use kernel::constraints::{Delay, Precedence, Specification};
 
 fn main() {
     let inv: Invariant<usize> = (&Delay {
