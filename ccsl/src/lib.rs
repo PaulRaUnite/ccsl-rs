@@ -1,15 +1,21 @@
-pub mod lccsl {
-    pub mod runner;
+#[macro_use]
+extern crate pest_derive;
+#[macro_use]
+extern crate lazy_static;
 
-    // TODO: rename the module and functions in it
-    pub mod algo;
+pub mod generation;
+pub mod kernel;
+pub mod lccsl;
 
-    pub mod vizualization;
+pub mod sort {}
+pub mod complexity {}
 
-    pub mod analysis;
-    pub mod optimization;
+// TODO: rename the module and functions in it
+pub mod algo;
 
-    pub mod dot;
-}
+pub mod visualisation;
 
-pub mod interpretation;
+pub mod analysis;
+pub mod optimization;
+
+pub mod dot;

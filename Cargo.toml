@@ -2,8 +2,7 @@
 
 members = [
     "ccsl",
-    "tool",
-    "gen",
-    "kernel",
-    "lccsl",
+    "tools",
+    "absint",
+    "experiments",
 ]
