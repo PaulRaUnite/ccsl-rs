@@ -434,7 +434,7 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::format::to_lccsl;
+    use crate::lccsl::format::render_lccsl;
 
     #[test]
     fn it_works() {
@@ -474,10 +474,10 @@ mod tests {
             ]
         }";
         let spec_const = parse_to_string(spec).expect("should parse");
-        let spec = to_lccsl(&spec_const.constraints, &spec_const.name);
+        let spec = render_lccsl(&spec_const.constraints, &spec_const.name);
         assert_eq!(
             remove_whitespace(&spec),
-            remove_whitespace(&to_lccsl(&spec_const.constraints, &spec_const.name))
+            remove_whitespace(&render_lccsl(&spec_const.constraints, &spec_const.name))
         );
     }
     fn remove_whitespace(s: &str) -> String {

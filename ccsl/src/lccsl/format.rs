@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
-pub fn to_lccsl<C>(spec: &[Constraint<C>], name: &str) -> String
+pub fn render_lccsl<C>(spec: &[Constraint<C>], name: &str) -> String
 where
     C: Display + Ord,
 {
@@ -32,8 +32,8 @@ mod tests {
         Causality, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
         Subclocking, Supremum, Union,
     };
-    use crate::lccsl::generation::random_connected_specification;
     use crate::lccsl::parser::parse_raw;
+    use gen::random_connected_specification;
 
     #[test]
     fn lccsl_roundtrip() {
@@ -106,7 +106,7 @@ mod tests {
             .into(),
         ];
 
-        let lccsl_format = to_lccsl(&spec, "test");
+        let lccsl_format = render_lccsl(&spec, "test");
         let result = parse_raw(&lccsl_format);
 
         assert!(matches!(result, Ok(_)), "{:?}", result);
@@ -118,7 +118,7 @@ mod tests {
             .into_iter()
             .map(|c| c.map(&mut |clock| format!("c{}", clock)))
             .collect_vec();
-        let lccsl_format = to_lccsl(&spec, "test");
+        let lccsl_format = render_lccsl(&spec, "test");
         let result = parse_raw(&lccsl_format);
 
         assert!(matches!(result, Ok(_)));
@@ -129,7 +129,7 @@ mod tests {
             .into_iter()
             .map(|c| c.map(&mut |clock| format!("c{}", clock)))
             .collect_vec();
-        let lccsl_format = to_lccsl(&spec, "test");
+        let lccsl_format = render_lccsl(&spec, "test");
         let result = parse_raw(&lccsl_format);
 
         assert!(matches!(result, Ok(_)));

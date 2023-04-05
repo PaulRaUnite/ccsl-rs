@@ -19,6 +19,8 @@ roaring = "0.10"
 bitmaps = "3.2"
 lazy_static = "1.4"
 map-macro = "0.2"
+dot = "0.1.4"
+gen ={path="../gen"}
 
 [dependencies.derive_more]
 version = "0.99"
