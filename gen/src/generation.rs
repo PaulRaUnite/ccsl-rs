@@ -4,40 +4,39 @@ use itertools::Itertools;
 use petgraph::prelude::*;
 use rand::prelude::*;
 
-use ccsl::lccsl::constraints::{
+use crate::graph::{random_processing_network, TreeIterator};
+use kernel::constraints::{
     Causality, Constraint, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
     Subclocking, Supremum, Union,
 };
+use petgraph::visit::IntoNodeReferences;
 use std::collections::BTreeSet;
+use std::fmt::{Display, Formatter};
+use std::num::NonZeroUsize;
+use std::str::FromStr;
 
-pub fn cycle_spec(size: usize) -> Option<Vec<Constraint<usize>>> {
-    if size <= 1 {
-        None
-    } else {
-        Some(
-            (0..size)
-                .tuple_windows()
-                .map(|(l, r)| {
-                    Precedence {
-                        left: l,
-                        right: r,
-                        init: None,
-                        max: None,
-                    }
-                    .into()
-                })
-                .chain(once(
-                    Delay {
-                        out: size - 1,
-                        base: 0,
-                        delay: 1,
-                        on: None,
-                    }
-                    .into(),
-                ))
-                .collect(),
-        )
-    }
+pub fn cycle_spec(size: usize) -> Vec<Constraint<usize>> {
+    (0..size)
+        .tuple_windows()
+        .map(|(l, r)| {
+            Precedence {
+                left: l,
+                right: r,
+                init: None,
+                max: None,
+            }
+            .into()
+        })
+        .chain(once(
+            Delay {
+                out: size - 1,
+                base: 0,
+                delay: 1,
+                on: None,
+            }
+            .into(),
+        ))
+        .collect()
 }
 
 pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
@@ -314,8 +313,9 @@ pub fn random_connected_specification(
 }
 
 pub fn cycle_with_tail(size: usize) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
-    let orig_spec = cycle_spec(size).unwrap();
-    (0..size - 1).map(move |i| {
+    let orig_spec = cycle_spec(size);
+    let size: usize = size;
+    (0..size - 1).map(move |i: usize| {
         orig_spec
             .iter()
             .cloned()
@@ -325,7 +325,8 @@ pub fn cycle_with_tail(size: usize) -> impl Iterator<Item = Vec<Constraint<usize
 }
 
 pub fn cycle_with_spike(size: usize) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
-    let orig_spec = cycle_spec(size).unwrap();
+    let orig_spec = cycle_spec(size);
+    let size: usize = size;
     (0..size - 1).map(move |i| {
         orig_spec
             .iter()
@@ -334,10 +335,12 @@ pub fn cycle_with_spike(size: usize) -> impl Iterator<Item = Vec<Constraint<usiz
             .collect_vec()
     })
 }
+
 pub fn cycle_with_tail_and_spike(
     size: usize,
 ) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
-    let orig_spec = cycle_spec(size).unwrap();
+    let orig_spec = cycle_spec(size);
+    let size: usize = size;
     (0..size - 1).map(move |i| {
         orig_spec
             .iter()
@@ -376,4 +379,126 @@ fn add_chain(clock_size: usize, pos: usize, tail: usize, out: bool) -> Vec<Const
         .into(),
     );
     constraints
+}
+
+pub fn deadlock_free() -> Vec<Constraint<usize>> {
+    todo!()
+}
+
+pub fn deadlocking() -> Vec<Constraint<usize>> {
+    todo!()
+}
+
+// Backpressure can be different:
+// - individual for each leaf with different values
+// - or though some kind of aggregation (synchronization barrier)
+// - or there is only one backpressure link, others will be deducted from it
+pub fn trees_with_backpressure(
+    size: usize,
+    buffer: usize,
+) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
+    TreeIterator::new(size + 1).map(move |g| {
+        let (first_leaf, _) = g
+            .node_references()
+            .find(|(n, _)| g.edges_directed(*n, Outgoing).next().is_none())
+            .unwrap();
+        let root = 0; // FIXME: is it??
+        let mut spec = to_precedence_spec(&g);
+        spec.extend(point_backpressure(root, first_leaf.index(), buffer));
+        spec
+    })
+}
+
+pub fn precedence_trees(size: usize) -> impl Iterator<Item = Vec<Constraint<usize>>> + Clone {
+    TreeIterator::new(size + 1).map(|g| to_precedence_spec(&g))
+}
+
+pub fn bound_by_exclusion() -> Vec<Constraint<usize>> {
+    todo!()
+}
+
+#[derive(Clone, Debug)]
+pub struct NetworkParams {
+    pub sources: usize,
+    pub intermediates: Vec<usize>,
+    pub sinks: usize,
+}
+
+impl From<Vec<NonZeroUsize>> for NetworkParams {
+    fn from(value: Vec<NonZeroUsize>) -> Self {
+        if value.len() < 2 {
+            panic!("dimensions vector is not big enough (expected 2+)");
+        }
+        let (first, tail) = value.split_first().unwrap();
+        let (last, middle) = tail.split_last().unwrap();
+        NetworkParams {
+            sources: (*first).into(),
+            intermediates: middle.iter().copied().map(Into::into).collect_vec(),
+            sinks: (*last).into(),
+        }
+    }
+}
+
+impl FromStr for NetworkParams {
+    type Err = <NonZeroUsize as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let layers: Vec<NonZeroUsize> = s
+            .split(',')
+            .map(|chunk| chunk.parse::<NonZeroUsize>())
+            .try_collect()?;
+        Ok(layers.into())
+    }
+}
+
+impl Display for NetworkParams {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.sources)?;
+        for v in &self.intermediates {
+            write!(f, "_{}", v)?;
+        }
+        write!(f, "_{}", self.sinks)
+    }
+}
+
+// Robert' idea, only exclusions for now
+pub fn inputs_to_restrictions(seed: u64, params: &NetworkParams) -> Vec<Constraint<usize>> {
+    let (g, _, outputs) = random_processing_network(seed, params);
+    let mut constraints = to_precedence_spec(&g);
+    constraints.push(
+        Exclusion {
+            clocks: outputs.into_iter().map(|n| n.index()).collect(),
+        }
+        .into(),
+    );
+    constraints
+}
+
+pub fn pipeline_parallel_execution(params: NetworkParams) -> Vec<Constraint<usize>> {
+    todo!()
+}
+
+pub fn point_backpressure<C: Clone>(
+    input: C,
+    output: C,
+    buffer: usize,
+) -> impl Iterator<Item = Constraint<C>> {
+    let delayed_input = input.clone();
+    [
+        Delay {
+            out: delayed_input.clone(),
+            base: input,
+            delay: buffer,
+            on: None,
+        }
+        .into(),
+        Precedence {
+            left: output,
+            right: delayed_input,
+            init: None,
+            max: None,
+        }
+        .into(),
+    ]
+    .into_iter()
 }

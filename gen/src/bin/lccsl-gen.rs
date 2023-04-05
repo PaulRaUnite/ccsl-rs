@@ -1,16 +1,23 @@
+use std::fmt::{Display, Formatter};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use rand::{Rng, SeedableRng};
-use rayon::prelude::{ParallelBridge, ParallelIterator};
 use structopt::StructOpt;
 
-use ccsl::lccsl::format::to_lccsl;
+use lccsl::format::render_lccsl;
 
 use anyhow::{anyhow, Result};
-use gen::generation::random_connected_specification;
+use gen::generation::{
+    point_backpressure, precedence_trees, random_connected_specification, to_precedence_spec,
+    trees_with_backpressure, NetworkParams,
+};
+use gen::graph::random_processing_network;
 use itertools::Itertools;
+use kernel::constraints::Constraint;
+use rand::prelude::{SliceRandom, StdRng};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "lccsl-gen", about = "LightCCSL specification generator")]
@@ -25,23 +32,22 @@ enum Cmd {
     /// Files are outputted in LightCCSL format, with name format <size>-<seed>.lc
     /// Subdirectory is created for easier separation
     Dir {
+        #[structopt(flatten)]
+        family: Family,
         /// Path to a directory to generate CCSL specifications
         dir: PathBuf,
-        /// Size of specifications to generate
-        #[structopt(short, long)]
-        size: usize,
         /// Amount of specifications to generate
         #[structopt(short, long)]
         amount: usize,
-        /// Starting seed of a random generator to generate specification seeds
-        #[structopt(short, long)]
-        seed: u64,
         /// Outputs directly into the specified directory without creating a subdirectory for specific starting seed
         #[structopt(short, long)]
         flatten: bool,
-        /// Flag to disable parallelism
+        /// Output graph alongside (in DOT format)
         #[structopt(short, long)]
-        no_par: bool,
+        graph: bool,
+        /// Conflict-based topological sorting
+        #[structopt(short, long)]
+        sort: bool,
     },
     /// Generate one specification
     One {
@@ -56,45 +62,119 @@ enum Cmd {
     },
 }
 
-fn generate_spec(dir: &Path, seed: u64, size: usize) -> Result<()> {
-    let filename = format!("{}-{}", size, seed);
-    let filepath = dir.join(&filename).with_extension("lc");
-    let file = BufWriter::new(OpenOptions::new().write(true).create(true).open(filepath)?);
-    write_spec(file, seed, size)
+#[derive(StructOpt, Debug)]
+enum Family {
+    Rand {
+        /// Starting seed of a random generator to generate specification seeds
+        #[structopt(short, long)]
+        seed: u64,
+        /// Size of specifications to generate
+        #[structopt(short, long)]
+        size: usize,
+    },
+    Tree {
+        /// Size of specifications to generate
+        #[structopt(short, long)]
+        size: usize,
+        /// Add backpressure constraints (to make it finite)
+        #[structopt(short, long)]
+        backpressure: Option<NonZeroUsize>,
+    },
+    Network {
+        /// Layer's dimensions (format is "1,2,3")
+        #[structopt(short, long = "dim")]
+        dimensions: NetworkParams,
+        /// Starting seed of a random generator to generate specification seeds
+        #[structopt(short, long)]
+        seed: u64,
+        /// Add backpressure constraints (to make it finite)
+        #[structopt(short, long)]
+        backpressure: Option<NonZeroUsize>,
+    },
+    Cycle {
+        /// Size of the cycle
+        #[structopt(short, long)]
+        size: usize,
+        /// Size of tail (from 0 to the argument)
+        #[structopt(short, long)]
+        tail_up_to: usize,
+        /// Size of head (from 0 to the argument)
+        #[structopt(short, long)]
+        head_up_to: usize,
+        /// Add backpressure constraint (between head and tail)
+        #[structopt(short, long)]
+        backpressure: Option<NonZeroUsize>,
+    },
 }
 
-fn write_spec(mut w: impl Write, seed: u64, size: usize) -> Result<()> {
-    let spec_name = format!("spec_{}_{}", size, seed);
-    let spec = random_connected_specification(seed, size, true)
-        .into_iter()
-        .map(|c| c.map(&mut |clock| format!("c{}", clock)))
-        .collect_vec();
-    write!(w, "{}", &to_lccsl(&spec, &spec_name))?;
+impl Display for Family {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Family::Rand { .. } => "rand",
+            Family::Tree { .. } => "tree",
+            Family::Network { .. } => "network",
+            Family::Cycle { .. } => "cycle",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+fn generate_to_dir(
+    dir: &Path,
+    specs: impl Iterator<Item = (String, Vec<Constraint<usize>>)>,
+) -> Result<()> {
+    for (spec_name, spec) in specs {
+        let filepath_spec = dir.join(&spec_name).with_extension("lc");
+        let mut spec_file = BufWriter::new(
+            OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(filepath_spec)?,
+        );
+        let spec = spec
+            .into_iter()
+            .map(|c| c.map(|clock| format!("c{}", clock)))
+            .collect_vec();
+        write!(spec_file, "{}", &render_lccsl(&spec, &spec_name))?;
+    }
     Ok(())
 }
 
-fn generate_dir(
-    dir: &Path,
-    specs: impl Iterator<Item = (u64, usize)> + Send,
-    parallel: bool,
-) -> Result<()> {
-    let mut results: Vec<Result<()>> = if parallel {
-        specs
-            .par_bridge()
-            .map(|(seed, size)| generate_spec(dir, seed, size))
-            .filter(|r| r.is_err())
-            .collect()
-    } else {
-        specs
-            .map(|(seed, size)| generate_spec(dir, seed, size))
-            .filter(|r| r.is_err())
-            .collect()
-    };
-    if !results.is_empty() {
-        results.pop().unwrap()
-    } else {
-        Ok(())
+fn specification_directory_structure(family: &Family, dir: PathBuf) -> PathBuf {
+    match &family {
+        Family::Rand { size, seed } => dir.join(seed.to_string()).join(size.to_string()),
+        Family::Tree {
+            size, backpressure, ..
+        }
+        | Family::Cycle {
+            size, backpressure, ..
+        } => {
+            let dir = dir.join(size.to_string());
+            if backpressure.is_some() {
+                dir.join("bp")
+            } else {
+                dir
+            }
+        }
+        Family::Network {
+            dimensions,
+            seed,
+            backpressure,
+            ..
+        } => {
+            let dir = dir.join(seed.to_string()).join(dimensions.to_string());
+            if backpressure.is_some() {
+                dir.join("bp")
+            } else {
+                dir
+            }
+        }
     }
+}
+
+fn unique_random_seeds(seed: u64, amount: usize) -> impl Iterator<Item = u64> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    (0..).map(move |_| rng.gen()).unique().take(amount)
 }
 
 fn main() -> Result<()> {
@@ -102,37 +182,93 @@ fn main() -> Result<()> {
 
     match app.cmd {
         Cmd::Dir {
+            family,
             dir,
-            size,
             amount,
-            seed,
             flatten,
-            no_par,
+            graph,
+            sort,
         } => {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-            if !dir.exists() {
-                return Err(anyhow!("Specified directory doesn't exist"));
-            }
             let dir = if flatten {
                 dir
             } else {
-                let dir = dir.join(seed.to_string());
-                if let Err(e) = std::fs::create_dir(&dir) {
+                let dir = dir.join(family.to_string());
+                let dir = specification_directory_structure(&family, dir);
+                if let Err(e) = std::fs::create_dir_all(&dir) {
                     if e.kind() != std::io::ErrorKind::AlreadyExists {
                         return Err(e.into());
                     }
                 }
                 dir
             };
-            generate_dir(&dir, (0..amount).map(|_| (rng.gen(), size)), !no_par)?;
+            if !dir.exists() {
+                return Err(anyhow!(
+                    "Directory doesn't exist: {}",
+                    dir.to_str().unwrap()
+                ));
+            }
+            match family {
+                Family::Rand { size, seed } => generate_to_dir(
+                    &dir,
+                    unique_random_seeds(seed, amount).map(|seed| {
+                        (
+                            format!("rand_{}_{}", size, seed),
+                            random_connected_specification(seed, size, true),
+                        )
+                    }),
+                )?,
+                Family::Tree { size, backpressure } => {
+                    let specs: Box<dyn Iterator<Item = Vec<Constraint<usize>>>> =
+                        if let Some(buffer) = backpressure {
+                            Box::new(trees_with_backpressure(size, buffer.get()))
+                        } else {
+                            Box::new(precedence_trees(size))
+                        };
+                    generate_to_dir(
+                        &dir,
+                        specs
+                            .enumerate()
+                            .map(|(i, spec)| (format!("tree_{}", i), spec)),
+                    )?
+                }
+                Family::Network {
+                    dimensions,
+                    seed,
+                    backpressure,
+                } => {
+                    let specs = unique_random_seeds(seed, amount).map(|seed| {
+                        let (g, inputs, outputs) = random_processing_network(seed, &dimensions);
+                        let mut spec = to_precedence_spec(&g);
+                        if let Some(buffer) = backpressure {
+                            let mut rng = StdRng::seed_from_u64(seed);
+                            spec.extend(point_backpressure(
+                                inputs.choose(&mut rng).unwrap().index(),
+                                outputs.choose(&mut rng).unwrap().index(),
+                                buffer.get(),
+                            ))
+                        }
+                        (format!("net_{}", seed), spec)
+                    });
+                    generate_to_dir(&dir, specs)?
+                }
+                Family::Cycle {
+                    size,
+                    tail_up_to,
+                    head_up_to,
+                    backpressure,
+                } => {}
+            }
         }
         Cmd::One { size, seed, file } => {
-            if let Some(filepath) = file {
+            let spec_name = format!("rand_{}_{}", size, seed);
+            let spec = random_connected_specification(seed, size, true);
+            let output: Box<dyn Write> = if let Some(filepath) = file {
                 let file = OpenOptions::new().write(true).create(true).open(filepath)?;
-                write_spec(BufWriter::new(file), seed, size)?;
+                Box::new(BufWriter::new(file))
             } else {
-                write_spec(std::io::stdout(), seed, size)?;
+                Box::new(std::io::stdout())
             };
+            write!(output, "{}", &render_lccsl(&spec, &spec_name))?;
         }
     }
     Ok(())

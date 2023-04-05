@@ -1,6 +1,9 @@
+use crate::generation::NetworkParams;
+use itertools::Itertools;
 use petgraph::prelude::*;
 use rand::prelude::*;
-use std::cmp::max;
+use std::iter::once;
+
 pub fn star(nodes: usize, width: usize) -> Option<DiGraph<usize, ()>> {
     if nodes == 0 || width == 0 {
         None
@@ -287,27 +290,70 @@ impl Iterator for TreeIterator {
     }
 }
 
-pub fn random_connected_graph(seed: u64, vertices: usize) -> UnGraph<(), ()> {
-    let (mut rng, mut g) = random_tree(seed, vertices, vertices * 2);
-    let edge_count = rng.gen_range(0..vertices ^ 2);
-    while g.edge_count() < edge_count {
-        g.add_edge(
-            NodeIndex::new(rng.gen_range(0..vertices)),
-            NodeIndex::new(rng.gen_range(0..vertices)),
-            (),
-        );
-    }
-    g
+#[derive(Copy, Clone, Debug)]
+pub enum ProcessingNode {
+    Source(usize),
+    Intermediate(usize),
+    Sink(usize),
 }
-
-pub fn random_tree(seed: u64, vertices: usize, edge_hint: usize) -> (StdRng, UnGraph<(), ()>) {
-    assert!(vertices > 0);
-
+pub fn random_processing_network(
+    seed: u64,
+    params: &NetworkParams,
+) -> (DiGraph<ProcessingNode, ()>, Vec<NodeIndex>, Vec<NodeIndex>) {
+    let NetworkParams {
+        sources,
+        intermediates,
+        sinks,
+    } = params;
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut g = UnGraph::with_capacity(vertices, max(edge_hint, vertices - 1));
-    for i in 1..vertices {
-        let n = g.add_node(());
-        g.add_edge(NodeIndex::new(rng.gen_range(0..i)), n, ());
+
+    let vertice_count = sources + intermediates.iter().sum::<usize>() + sinks;
+    let mut g = DiGraph::with_capacity(vertice_count, vertice_count * 2);
+    let sources = (0..*sources)
+        .map(|i| g.add_node(ProcessingNode::Source(i)))
+        .collect_vec();
+    let mut intermediate_layers = Vec::with_capacity(intermediates.len());
+    let mut count: usize = 0;
+    for n_layer in intermediates.iter().copied() {
+        let mut layer = Vec::with_capacity(n_layer);
+        for _ in 0..n_layer {
+            layer.push(g.add_node(ProcessingNode::Intermediate(count)));
+            count += 1;
+        }
+        intermediate_layers.push(layer);
     }
-    (rng, g)
+    let sinks = (0..*sinks)
+        .map(|i| g.add_node(ProcessingNode::Sink(i)))
+        .collect_vec();
+    while petgraph::algo::connected_components(&g) != 1
+        || intermediate_layers.iter().flat_map(|l| l.iter()).any(|n| {
+            g.edges_directed(*n, Outgoing).count() == 0
+                || g.edges_directed(*n, Incoming).count() == 0
+        })
+    {
+        let layer = rng.gen_range(0..intermediates.len() + 1);
+        let source = if layer == 0 {
+            &sources
+        } else {
+            &intermediate_layers[layer - 1]
+        }
+        .choose(&mut rng)
+        .unwrap();
+        let target = if layer == intermediates.len() {
+            &sinks
+        } else {
+            intermediate_layers[layer..]
+                .iter()
+                .chain(once(&sinks))
+                .choose(&mut rng)
+                .unwrap()
+        }
+        .choose(&mut rng)
+        .unwrap();
+        if g.edges_connecting(*source, *target).count() == 0 {
+            g.add_edge(*source, *target, ());
+        }
+    }
+    println!("{} {}", g.node_count(), g.edge_count());
+    (g, sources, sinks)
 }
