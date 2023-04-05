@@ -100,7 +100,7 @@ pub fn parse_to_u32(input: &str) -> Result<Specification<u32>, ParseError> {
         constraints: spec
             .constraints
             .iter()
-            .map(|c| c.map(&mut |c| *unique_clocks.get(&c).unwrap()))
+            .map(|c| c.map(|c| *unique_clocks.get(&c).unwrap()))
             .collect(),
     })
 }
@@ -142,7 +142,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
             .constraints
             .iter()
             .map(|c| {
-                c.map(&mut |c| match c {
+                c.map(|c| match c {
                     ID::C(s) => s.clone(),
                     ID::G(n) => format!("{}{}", prefix, n),
                 })
@@ -285,7 +285,7 @@ fn parse_let_expr(
     let out: ID = inner.next().unwrap().as_str().to_string().into();
     let expr_out = parse_expression(inner, gen, &mut constraints);
     let last = constraints.last_mut().unwrap();
-    *last = last.map(&mut |c| {
+    *last = last.map(|c| {
         if c == &expr_out {
             out.clone()
         } else {

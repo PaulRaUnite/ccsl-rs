@@ -39,7 +39,7 @@ pub struct Causality<C> {
 }
 
 impl<C> Causality<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Causality<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Causality<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -61,7 +61,7 @@ pub struct Precedence<C> {
 }
 
 impl<C> Precedence<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Precedence<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Precedence<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -80,7 +80,7 @@ pub struct Exclusion<C> {
 }
 
 impl<C> Exclusion<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Exclusion<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Exclusion<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -98,7 +98,7 @@ pub struct Subclocking<C> {
 }
 
 impl<C> Subclocking<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Subclocking<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Subclocking<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -115,7 +115,7 @@ pub struct Union<C> {
 }
 
 impl<C> Union<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Union<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Union<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -134,7 +134,7 @@ pub struct Intersection<C> {
 }
 
 impl<C> Intersection<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Intersection<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Intersection<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -154,7 +154,7 @@ pub struct Infinity<C> {
 }
 
 impl<C> Infinity<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Infinity<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Infinity<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -173,7 +173,7 @@ pub struct Supremum<C> {
     pub right: C,
 }
 impl<C> Supremum<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Supremum<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Supremum<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -196,7 +196,7 @@ pub struct Repeat<C> {
 }
 
 impl<C> Repeat<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Repeat<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Repeat<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -219,7 +219,7 @@ pub struct Delay<C> {
 }
 
 impl<C> Delay<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Delay<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Delay<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -239,7 +239,7 @@ pub struct SampleOn<C> {
 }
 
 impl<C> SampleOn<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> SampleOn<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> SampleOn<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -259,7 +259,7 @@ pub struct Diff<C> {
 }
 
 impl<C> Diff<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Diff<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Diff<B>
     where
         F: FnMut(&C) -> B,
     {
@@ -279,7 +279,7 @@ pub struct Minus<C> {
 }
 
 impl<C> Minus<C> {
-    pub(crate) fn map<B, F>(&self, f: &mut F) -> Minus<B>
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Minus<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -810,7 +810,7 @@ where
 pub struct Specification<C>(Vec<Constraint<C>>);
 
 impl<C> Constraint<C> {
-    pub fn map<B, F>(&self, f: &mut F) -> Constraint<B>
+    pub fn map<B, F>(&self, f: F) -> Constraint<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -907,12 +907,12 @@ impl<C> Constraint<C> {
 }
 
 impl<C> Specification<C> {
-    pub fn map<B, F>(&self, f: &mut F) -> Specification<B>
+    pub fn map<B, F>(&self, mut f: F) -> Specification<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
     {
-        Specification(self.0.iter().map(move |c| c.map(f)).collect())
+        Specification(self.0.iter().map(move |c| c.map(|c| f(c))).collect())
     }
 
     pub fn iter(&self) -> Iter<'_, Constraint<C>> {
