@@ -18,9 +18,9 @@ use petgraph::{Direction, Graph};
 use crate::lccsl::algo::{
     squished_conflict_map, unidirect_squished_map, ConflictEffect, ConflictSource,
 };
-use crate::lccsl::automata::label::Label;
-use crate::lccsl::constraints::Constraint;
 use crate::lccsl::optimization::root::weights_with_init;
+use kernel::automata::label::Label;
+use kernel::constraints::Constraint;
 
 pub fn optimize_by_sort_weights<C, L>(spec: &[Constraint<C>]) -> Permutation
 where

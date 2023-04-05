@@ -8,10 +8,9 @@ use std::iter::once;
 use derive_more::{From, Into};
 use itertools::Itertools;
 
-use crate::lccsl::automata::label::Label;
-use crate::lccsl::automata::{Delta, STSBuilder, State, STS};
-use crate::lccsl::expressions::{BooleanExpression, IntegerExpression};
-use crate::lccsl::parser;
+use crate::automata::label::Label;
+use crate::automata::{Delta, STSBuilder, State, STS};
+use crate::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 use std::cmp::max;
 use std::ops::BitOr;
@@ -935,11 +934,5 @@ impl<'a, C> IntoIterator for &'a Specification<C> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
-    }
-}
-
-impl<T> From<parser::Specification<T>> for Specification<T> {
-    fn from(spec: parser::Specification<T>) -> Self {
-        Specification(spec.constraints)
     }
 }

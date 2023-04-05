@@ -1,5 +1,5 @@
-use crate::lccsl::constraints::Constraint;
 use itertools::Itertools;
+use kernel::constraints::Constraint;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
@@ -28,12 +28,11 @@ Specification {} {{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::constraints::{
+    use crate::parser::parse_raw;
+    use kernel::constraints::{
         Causality, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
         Subclocking, Supremum, Union,
     };
-    use crate::lccsl::parser::parse_raw;
-    use gen::random_connected_specification;
 
     #[test]
     fn lccsl_roundtrip() {
@@ -110,28 +109,5 @@ mod tests {
         let result = parse_raw(&lccsl_format);
 
         assert!(matches!(result, Ok(_)), "{:?}", result);
-    }
-
-    #[test]
-    fn random_fixed() {
-        let spec = random_connected_specification(0, 5, true)
-            .into_iter()
-            .map(|c| c.map(&mut |clock| format!("c{}", clock)))
-            .collect_vec();
-        let lccsl_format = render_lccsl(&spec, "test");
-        let result = parse_raw(&lccsl_format);
-
-        assert!(matches!(result, Ok(_)));
-    }
-    #[test]
-    fn random_unfixed() {
-        let spec = random_connected_specification(0, 5, false)
-            .into_iter()
-            .map(|c| c.map(&mut |clock| format!("c{}", clock)))
-            .collect_vec();
-        let lccsl_format = render_lccsl(&spec, "test");
-        let result = parse_raw(&lccsl_format);
-
-        assert!(matches!(result, Ok(_)));
     }
 }

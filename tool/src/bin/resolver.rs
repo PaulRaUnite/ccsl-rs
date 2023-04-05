@@ -1,8 +1,8 @@
 use ccsl::lccsl::algo::{squished_conflict_map, unidirect_squished_map};
 use ccsl::lccsl::automata::label::StaticBitmapLabel;
 use ccsl::lccsl::automata::STS;
-use ccsl::lccsl::generation::random_connected_specification;
 use ccsl::lccsl::vizualization::unfold_specification;
+use gen::generation::random_connected_specification;
 use itertools::Itertools;
 use petgraph::algo::min_spanning_tree;
 use petgraph::data::FromElements;
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let spec = random_connected_specification(spec_id, size, true)
         .into_iter()
-        .map(|c| c.map(&mut |clock| *clock as u32))
+        .map(|c| c.map(|clock| *clock as u32))
         .collect_vec();
     //decode_spec(gen, spec_id).unwrap();
     let variant = match app.cmd {

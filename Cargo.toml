@@ -4,4 +4,6 @@ members = [
     "ccsl",
     "tool",
     "gen",
+    "kernel",
+    "lccsl",
 ]

@@ -1,4 +1,4 @@
-use crate::lccsl::expressions::{BooleanExpression, Switch};
+use crate::expressions::{BooleanExpression, Switch};
 use itertools::Itertools;
 use label::*;
 use std::cmp::Ordering;

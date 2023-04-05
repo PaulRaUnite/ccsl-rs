@@ -431,9 +431,10 @@ dependencies = [
 name = "ccsl"
 version = "0.1.0"
 dependencies = [
- "bitmaps",
  "derive_more",
+ "dot",
  "itertools",
+ "kernel",
  "lazy_static",
  "map-macro",
  "num",
@@ -442,7 +443,6 @@ dependencies = [
  "pest_derive",
  "petgraph",
  "rand",
- "roaring",
  "thiserror",
 ]
 
@@ -742,6 +742,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dot"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a74b6c4d4a1cff5f454164363c16b72fa12463ca6b31f4b5f2035a65fa3d5906"
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -903,11 +909,11 @@ name = "gen"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ccsl",
  "itertools",
+ "kernel",
+ "lccsl",
  "petgraph",
  "rand",
- "rayon",
  "structopt",
 ]
 
@@ -1074,10 +1080,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel"
+version = "0.1.0"
+dependencies = [
+ "bitmaps",
+ "derive_more",
+ "itertools",
+ "num",
+ "petgraph",
+ "roaring",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
+name = "lccsl"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "itertools",
+ "kernel",
+ "rand",
+ "thiserror",
+]
 
 [[package]]
 name = "lehmer"

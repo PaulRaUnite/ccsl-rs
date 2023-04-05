@@ -5,15 +5,9 @@ extern crate lazy_static;
 extern crate core;
 
 pub mod lccsl {
-    pub mod constraints;
-
-    pub mod automata;
-
     pub mod parser;
 
     pub mod runner;
-
-    pub mod expressions;
 
     // TODO: rename the module and functions in it
     pub mod algo;
@@ -25,6 +19,8 @@ pub mod lccsl {
     pub mod format;
 
     pub mod analysis;
+
+    pub mod dot;
 }
 
 pub mod interpretation;

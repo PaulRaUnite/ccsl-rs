@@ -10,9 +10,9 @@ use num::rational::Ratio;
 use petgraph::prelude::{EdgeRef, UnGraph};
 use petgraph::{Direction, Graph};
 
-use crate::lccsl::automata::label::Label;
-use crate::lccsl::automata::{MergedTransition, STSBuilder, StateRef, STS};
-use crate::lccsl::constraints::Constraint;
+use kernel::automata::label::Label;
+use kernel::automata::{MergedTransition, STSBuilder, StateRef, STS};
+use kernel::constraints::Constraint;
 use num::{Integer, ToPrimitive};
 
 #[derive(Debug, Copy, Clone)]

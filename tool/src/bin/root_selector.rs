@@ -1,9 +1,9 @@
 use ccsl::lccsl::automata::label::StaticBitmapLabel;
 use ccsl::lccsl::automata::STS;
-use ccsl::lccsl::generation::random_connected_specification;
 use ccsl::lccsl::optimization::{
     optimize_by_min_front_init_weights, optimize_by_min_front_init_weights_root,
 };
+use gen::generation::random_connected_specification;
 use itertools::Itertools;
 use std::error::Error;
 use structopt::StructOpt;
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = Opt::from_args();
     let spec = random_connected_specification(opt.spec, opt.size, true)
         .into_iter()
-        .map(|c| c.map(&mut |clock| *clock as u32))
+        .map(|c| c.map(|clock| *clock as u32))
         .collect_vec();
 
     let best_opti = (0..opt.size as u8)

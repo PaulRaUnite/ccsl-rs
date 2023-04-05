@@ -7,8 +7,8 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use thiserror::Error;
 
-use crate::lccsl::constraints::*;
 use itertools::Itertools;
+use kernel::constraints::*;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::cell::RefCell;
@@ -428,6 +428,12 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
             .into()
         }
         _ => unreachable!(),
+    }
+}
+
+impl<T> From<Specification<T>> for kernel::constraints::Specification<T> {
+    fn from(spec: Specification<T>) -> Self {
+        Self(spec.constraints)
     }
 }
 

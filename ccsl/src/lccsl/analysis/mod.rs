@@ -1,16 +1,16 @@
 use crate::interpretation::boolean::Bool;
 use crate::interpretation::interval::Interval;
 use crate::interpretation::{Lattice, Prec, SequenceLimiter, Succ};
-use crate::lccsl::automata::Delta;
-use crate::lccsl::constraints::{
+use derive_more::From;
+use itertools::Itertools;
+use kernel::automata::Delta;
+use kernel::constraints::{
     Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
     Repeat, SampleOn, Specification, Subclocking, Supremum, Union,
 };
-use crate::lccsl::expressions::{
+use kernel::expressions::{
     BooleanComparisonKind, BooleanExpression, IntegerComparisonKind, IntegerExpression,
 };
-use derive_more::From;
-use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};

@@ -25,8 +25,9 @@ use ccsl::lccsl::optimization::{
 };
 use gen::generation::{
     cycle_spec, cycle_with_spike, cycle_with_tail, cycle_with_tail_and_spike,
-    random_connected_specification, star, to_precedence_spec, to_subclocking_spec, TreeIterator,
+    random_connected_specification, to_precedence_spec, to_subclocking_spec,
 };
+use gen::graph::{star, TreeIterator};
 use tool::{
     analyze_specification, analyze_specification_combination, analyze_squish_specification,
     collection, gen_spec, gen_spec_flat, inverse_graph, stream_to_parquet, stream_to_parquet_flat,
@@ -78,7 +79,7 @@ fn generate(data_dir: &Path) -> Result<()> {
     )?;
     analyse_specs(
         &data_dir.join("circle"),
-        gen_spec(3..=8, |size| cycle_spec(size).unwrap()),
+        gen_spec(3..=8, |size| cycle_spec(size)),
     )?;
     analyse_specs(
         &data_dir.join("star/precedence"),
@@ -172,7 +173,7 @@ where
         .map(|(spec_id, s)| {
             let spec: Vec<Constraint<u32>> = s
                 .into_iter()
-                .map(|c| c.map(&mut |clock| *clock as u32))
+                .map(|c| c.map(|clock| *clock as u32))
                 .collect();
             if spec.len() > (u8::MAX as usize) {
                 panic!("lehmer lib requires u8 size for permutation indexes");

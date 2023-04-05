@@ -156,7 +156,7 @@ pub enum IntegerComparisonKind {
 }
 
 impl IntegerComparisonKind {
-    pub(crate) fn inverse(self) -> Self {
+    pub fn inverse(self) -> Self {
         match self {
             IntegerComparisonKind::Equal => IntegerComparisonKind::Equal,
             IntegerComparisonKind::Less => IntegerComparisonKind::MoreEq,
