@@ -13,7 +13,7 @@ use arrow::array::{ArrayRef, UInt64Array, UInt8Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
-use parquet::arrow::ArrowWriter;
+use parquet::arrow::ArrowWriter; // TODO: try to move to arrow2 library?
 use permutation::Permutation;
 use petgraph::dot::Config::{EdgeNoLabel, NodeNoLabel};
 use petgraph::dot::Dot;

@@ -15,11 +15,11 @@ use walkdir::WalkDir;
 
 use anyhow::Context;
 use ccsl::algo::generate_combinations;
-use ccsl::generation::generation::{
+use ccsl::generation::graph::{star, TreeIterator};
+use ccsl::generation::specification::{
     cycle_with_tail_and_spike, random_connected_specification, to_precedence_spec,
     to_subclocking_spec,
 };
-use ccsl::generation::graph::{star, TreeIterator};
 use ccsl::kernel::automata::label::StaticBitmapLabel;
 use ccsl::kernel::automata::STS;
 use ccsl::kernel::constraints::{Causality, Constraint, Delay, Precedence, Union};

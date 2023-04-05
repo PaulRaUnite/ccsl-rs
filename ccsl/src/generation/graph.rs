@@ -1,4 +1,4 @@
-use crate::generation::generation::NetworkParams;
+use crate::generation::specification::NetworkParams;
 use itertools::Itertools;
 use petgraph::prelude::*;
 use rand::prelude::*;

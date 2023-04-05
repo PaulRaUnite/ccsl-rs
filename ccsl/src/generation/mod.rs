@@ -1,3 +1,3 @@
-pub mod generation;
+pub mod specification;
 
 pub mod graph;

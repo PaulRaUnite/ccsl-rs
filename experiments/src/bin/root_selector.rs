@@ -1,4 +1,4 @@
-use ccsl::generation::generation::random_connected_specification;
+use ccsl::generation::specification::random_connected_specification;
 use ccsl::kernel::automata::label::StaticBitmapLabel;
 use ccsl::kernel::automata::STS;
 use ccsl::optimization::{

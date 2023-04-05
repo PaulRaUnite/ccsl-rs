@@ -410,6 +410,7 @@ pub fn inputs_to_restrictions(seed: u64, params: &NetworkParams) -> Vec<Constrai
     let mut constraints = to_precedence_spec(&g);
     constraints.push(
         Exclusion {
+            // TODO: should probably be something more complex than just exclusion
             clocks: outputs.into_iter().map(|n| n.index()).collect(),
         }
         .into(),

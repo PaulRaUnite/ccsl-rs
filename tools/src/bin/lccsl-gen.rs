@@ -10,11 +10,11 @@ use structopt::StructOpt;
 use ccsl::lccsl::format::render_lccsl;
 
 use anyhow::{anyhow, Result};
-use ccsl::generation::generation::{
+use ccsl::generation::graph::random_processing_network;
+use ccsl::generation::specification::{
     cycle_with_tail_and_spike, point_backpressure, precedence_trees,
     random_connected_specification, to_precedence_spec, trees_with_backpressure, NetworkParams,
 };
-use ccsl::generation::graph::random_processing_network;
 use ccsl::kernel::constraints::Constraint;
 use itertools::Itertools;
 use rand::prelude::{SliceRandom, StdRng};
