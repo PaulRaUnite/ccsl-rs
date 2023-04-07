@@ -1,8 +1,16 @@
 [workspace]
-
 members = [
     "ccsl",
     "tools",
     "absint",
     "experiments",
 ]
+default-members=[
+    "tools",
+]
+
+[workspace.package]
+version = "0.2.0"
+authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
+description = "Library implementing CCSL, experiments and tools related to it"
+edition = "2021"

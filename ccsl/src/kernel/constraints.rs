@@ -23,6 +23,18 @@ pub struct Coincidence<C> {
     pub right: C,
 }
 
+impl<C> Coincidence<C> {
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Coincidence<B>
+        where
+            F: FnMut(&C) -> B,
+    {
+        Coincidence {
+            left: f(&self.left),
+            right: f(&self.right),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Alternates<C> {
     pub left: C,
@@ -36,6 +48,7 @@ pub struct Causality<C> {
     pub init: Option<usize>,
     pub max: Option<usize>,
 }
+
 
 impl<C> Causality<C> {
     pub(crate) fn map<B, F>(&self, mut f: F) -> Causality<B>
@@ -79,7 +92,7 @@ pub struct Exclusion<C> {
 }
 
 impl<C> Exclusion<C> {
-    pub(crate) fn map<B, F>(&self, mut f: F) -> Exclusion<B>
+    pub(crate) fn map<B, F>(&self, f: F) -> Exclusion<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
@@ -293,6 +306,7 @@ impl<C> Minus<C> {
 
 #[derive(Debug, Clone, From, Hash)]
 pub enum Constraint<C> {
+    Coincidence(Coincidence<C>),
     Causality(Causality<C>),
     Precedence(Precedence<C>),
     SubClock(Subclocking<C>),
@@ -313,21 +327,7 @@ where
     C: Hash + Clone + Ord + Display,
 {
     fn from(c: &Constraint<C>) -> Self {
-        match c {
-            Constraint::Causality(c) => c.into(),
-            Constraint::Precedence(c) => c.into(),
-            Constraint::SubClock(c) => c.into(),
-            Constraint::Exclusion(c) => c.into(),
-            Constraint::Infinity(c) => c.into(),
-            Constraint::Supremum(c) => c.into(),
-            Constraint::Union(c) => c.into(),
-            Constraint::Intersection(c) => c.into(),
-            Constraint::Minus(c) => c.into(),
-            Constraint::Repeat(c) => c.into(),
-            Constraint::Delay(c) => c.into(),
-            Constraint::SampleOn(c) => c.into(),
-            Constraint::Diff(c) => c.into(),
-        }
+        c.map_ref_into()
     }
 }
 
@@ -338,7 +338,7 @@ where
     fn from(c: &Coincidence<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let state = State::new(0).with_invariant(var.eq(0));
-        let mut system = STSBuilder::new(&c, state.clone());
+        let mut system = STSBuilder::new(c, state.clone());
         tr!(system, &state => &state, {c.left, c.right,});
 
         system
@@ -353,7 +353,7 @@ where
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let alt = State::new(1).with_invariant(var.eq(1));
-        let mut system = STSBuilder::new(&c, start.clone());
+        let mut system = STSBuilder::new(c, start.clone());
 
         tr!(system, &start => &alt, {c.left, !c.right,});
         tr!(system, &alt => &start, {!c.left, c.right,});
@@ -376,7 +376,7 @@ where
             .into();
         let start = State::new(0);
         tr!(system, &start => &start, {c.left, c.right,});
-        system.set_name(&c);
+        system.set_name(c);
         system
     }
 }
@@ -809,12 +809,13 @@ where
 pub struct Specification<C>(pub Vec<Constraint<C>>);
 
 impl<C> Constraint<C> {
-    pub fn map<B, F>(&self, f: F) -> Constraint<B>
+    pub fn map_clocks<B, F>(&self, f: F) -> Constraint<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
     {
         match self {
+            Constraint::Coincidence(c) => c.map(f).into(),
             Constraint::Causality(c) => c.map(f).into(),
             Constraint::Precedence(c) => c.map(f).into(),
             Constraint::SubClock(c) => c.map(f).into(),
@@ -831,28 +832,10 @@ impl<C> Constraint<C> {
         }
     }
 
-    pub fn rank(&self) -> usize {
-        match self {
-            // TODO: define more clearly the ranking
-            Constraint::Causality(_) => 2,
-            Constraint::Precedence(_) => 2,
-            Constraint::SubClock(_) => 1,
-            Constraint::Exclusion(_) => 0,
-            Constraint::Infinity(_) => 3,
-            Constraint::Supremum(_) => 3,
-            Constraint::Union(_) => 2,
-            Constraint::Intersection(_) => 0,
-            Constraint::Minus(_) => 2,
-            Constraint::Repeat(_) => 5,
-            Constraint::Delay(_) => 0,
-            Constraint::SampleOn(_) => 1,
-            Constraint::Diff(_) => 1,
-        }
-    }
-
     // TODO: replace by map invocation
     pub fn clocks(&self) -> Vec<&C> {
         match self {
+            Constraint::Coincidence(c) => vec![&c.left, &c.right],
             Constraint::Causality(c) => vec![&c.left, &c.right],
             Constraint::Precedence(c) => vec![&c.left, &c.right],
             Constraint::SubClock(c) => vec![&c.left, &c.right],
@@ -874,48 +857,87 @@ impl<C> Constraint<C> {
         }
     }
 
-    pub fn to_lccsl(&self) -> String
+    pub fn map_into<T>(self) -> T
     where
-        C: Display,
+        T: From<Coincidence<C>>
+            + From<Causality<C>>
+            + From<Precedence<C>>
+            + From<Subclocking<C>>
+            + From<Exclusion<C>>
+            + From<Infinity<C>>
+            + From<Supremum<C>>
+            + From<Union<C>>
+            + From<Intersection<C>>
+            + From<Minus<C>>
+            + From<Repeat<C>>
+            + From<Delay<C>>
+            + From<SampleOn<C>>
+            + From<Diff<C>>,
     {
         match self {
-            Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right),
-            Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
-            Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
-            Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
-            Constraint::Infinity(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
-            Constraint::Supremum(c) => format!("Let {} be sup({}, {})", c.out, c.left, c.right),
-            Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join(" + ")),
-            Constraint::Intersection(c) => {
-                format!("Let {} be {}", c.out, c.args.iter().join(" * "))
-            }
-            Constraint::Minus(c) => format!("Let {} be {} - {}", c.out, c.left, c.right,),
-            Constraint::Repeat(c) => format!(
-                "repeat {} every {} {} {} {}",
-                c.out,
-                c.every.to_string(),
-                c.base,
-                c.from.map_or("".to_owned(), |v| format!("from {}", v)),
-                c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
-            ),
-            Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
-            Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.trigger, c.base),
-            Constraint::Diff(c) => format!("{} = {} [{}, {}]", c.out, c.base, c.from, c.up_to),
+            Constraint::Coincidence(c) => c.into(),
+            Constraint::Causality(c) => c.into(),
+            Constraint::Precedence(c) => c.into(),
+            Constraint::SubClock(c) => c.into(),
+            Constraint::Exclusion(c) => c.into(),
+            Constraint::Infinity(c) => c.into(),
+            Constraint::Supremum(c) => c.into(),
+            Constraint::Union(c) => c.into(),
+            Constraint::Intersection(c) => c.into(),
+            Constraint::Minus(c) => c.into(),
+            Constraint::Repeat(c) => c.into(),
+            Constraint::Delay(c) => c.into(),
+            Constraint::SampleOn(c) => c.into(),
+            Constraint::Diff(c) => c.into(),
+        }
+    }
+    pub fn map_ref_into<T>(&self) -> T
+    where
+        for<'a> T: From<&'a Coincidence<C>>
+            + From<&'a Causality<C>>
+            + From<&'a Precedence<C>>
+            + From<&'a Subclocking<C>>
+            + From<&'a Exclusion<C>>
+            + From<&'a Infinity<C>>
+            + From<&'a Supremum<C>>
+            + From<&'a Union<C>>
+            + From<&'a Intersection<C>>
+            + From<&'a Minus<C>>
+            + From<&'a Repeat<C>>
+            + From<&'a Delay<C>>
+            + From<&'a SampleOn<C>>
+            + From<&'a Diff<C>>,
+    {
+        match self {
+            Constraint::Coincidence(c) => c.into(),
+            Constraint::Causality(c) => c.into(),
+            Constraint::Precedence(c) => c.into(),
+            Constraint::SubClock(c) => c.into(),
+            Constraint::Exclusion(c) => c.into(),
+            Constraint::Infinity(c) => c.into(),
+            Constraint::Supremum(c) => c.into(),
+            Constraint::Union(c) => c.into(),
+            Constraint::Intersection(c) => c.into(),
+            Constraint::Minus(c) => c.into(),
+            Constraint::Repeat(c) => c.into(),
+            Constraint::Delay(c) => c.into(),
+            Constraint::SampleOn(c) => c.into(),
+            Constraint::Diff(c) => c.into(),
         }
     }
 }
 
 impl<C> Specification<C> {
-    pub fn map<B, F>(&self, mut f: F) -> Specification<B>
+    pub fn map_clocks<B, F>(&self, mut f: F) -> Specification<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
     {
-        Specification(self.0.iter().map(move |c| c.map(|c| f(c))).collect())
+        Specification(self.0.iter().map(move |c| c.map_clocks(|c| f(c))).collect())
     }
 
     pub fn iter(&self) -> Iter<'_, Constraint<C>> {
-        self.0.iter()
+        self.into_iter()
     }
 }
 
@@ -933,6 +955,6 @@ impl<'a, C> IntoIterator for &'a Specification<C> {
     type IntoIter = Iter<'a, Constraint<C>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        self.0.iter()
     }
 }

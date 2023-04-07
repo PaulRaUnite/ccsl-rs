@@ -1,8 +1,8 @@
 [package]
-name = "tool"
-version = "0.2.0"
-authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
-edition = "2021"
+name = "tools"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -1,7 +1,7 @@
 use crate::kernel::automata::Delta;
 use crate::kernel::constraints::{
-    Causality, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus, Precedence,
-    Repeat, SampleOn, Specification, Subclocking, Supremum, Union,
+    Causality, Coincidence, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus,
+    Precedence, Repeat, SampleOn, Specification, Subclocking, Supremum, Union,
 };
 use crate::kernel::expressions::{
     BooleanComparisonKind, BooleanExpression, IntegerComparisonKind, IntegerExpression,
@@ -30,21 +30,7 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
         let mut counters = vec![];
         let mut invariants = vec![];
         for c in spec {
-            let invariant: Invariant<C> = match c {
-                Constraint::Causality(c) => c.into(),
-                Constraint::Precedence(c) => c.into(),
-                Constraint::SubClock(c) => c.into(),
-                Constraint::Exclusion(c) => c.into(),
-                Constraint::Infinity(c) => c.into(),
-                Constraint::Supremum(c) => c.into(),
-                Constraint::Union(c) => c.into(),
-                Constraint::Intersection(c) => c.into(),
-                Constraint::Minus(c) => c.into(),
-                Constraint::Repeat(c) => c.into(),
-                Constraint::Delay(c) => c.into(),
-                Constraint::SampleOn(c) => c.into(),
-                Constraint::Diff(c) => c.into(),
-            };
+            let invariant: Invariant<C> = c.map_ref_into();
             invariant
                 .0
                 .leaves(&mut counters, &mut clocks, &mut vec![], &mut vec![]);
@@ -75,6 +61,13 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
 #[derive(Debug, Clone, From)]
 pub struct Invariant<C>(pub BooleanExpression<Delta<C>, C>);
 
+impl<C: Clone> From<&'_ Coincidence<C>> for Invariant<C> {
+    fn from(c: &'_ Coincidence<C>) -> Self {
+        let a = BooleanExpression::var(c.left.clone());
+        let b = BooleanExpression::var(c.right.clone());
+        a.eq(b).into()
+    }
+}
 impl<C: Clone> From<&'_ Causality<C>> for Invariant<C> {
     fn from(c: &'_ Causality<C>) -> Self {
         IntegerExpression::var(Delta(c.left.clone(), c.right.clone()))

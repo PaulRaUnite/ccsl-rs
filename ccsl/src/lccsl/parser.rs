@@ -23,6 +23,7 @@ pub fn parse_raw(input: &str) -> Result<Pair<Rule>, pest::error::Error<Rule>> {
     Ok(LightCCSLParser::parse(Rule::file, input)?.next().unwrap())
 }
 
+// TODO: unify with another Specification
 #[derive(Debug, Clone)]
 pub struct Specification<C> {
     pub name: String,
@@ -42,6 +43,8 @@ pub enum ParseError {
 // TODO: parse into a specialized AST/enum, not directly into constrains,
 //  for reasons of encoding/decoding roundtrip: some constraints
 //  are split and so do not preserve the initial structure.
+//  Main problem is that some expression can nest, creating anonymous clocks,
+//  which then are rendered explicitly in roundtrip test.
 
 fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
@@ -100,7 +103,7 @@ pub fn parse_to_u32(input: &str) -> Result<Specification<u32>, ParseError> {
         constraints: spec
             .constraints
             .iter()
-            .map(|c| c.map(|c| *unique_clocks.get(&c).unwrap()))
+            .map(|c| c.map_clocks(|c| *unique_clocks.get(&c).unwrap()))
             .collect(),
     })
 }
@@ -142,7 +145,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
             .constraints
             .iter()
             .map(|c| {
-                c.map(|c| match c {
+                c.map_clocks(|c| match c {
                     ID::C(s) => s.clone(),
                     ID::G(n) => format!("{}{}", prefix, n),
                 })
@@ -285,7 +288,7 @@ fn parse_let_expr(
     let out: ID = inner.next().unwrap().as_str().to_string().into();
     let expr_out = parse_expression(inner, gen, &mut constraints);
     let last = constraints.last_mut().unwrap();
-    *last = last.map(|c| {
+    *last = last.map_clocks(|c| {
         if c == &expr_out {
             out.clone()
         } else {
@@ -440,7 +443,7 @@ impl<T> From<Specification<T>> for crate::kernel::constraints::Specification<T> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::format::render_lccsl;
+    use crate::lccsl::format::render;
 
     #[test]
     fn it_works() {
@@ -480,10 +483,10 @@ mod tests {
             ]
         }";
         let spec_const = parse_to_string(spec).expect("should parse");
-        let spec = render_lccsl(&spec_const.constraints, &spec_const.name);
+        let spec = render(&spec_const.constraints, &spec_const.name);
         assert_eq!(
             remove_whitespace(&spec),
-            remove_whitespace(&render_lccsl(&spec_const.constraints, &spec_const.name))
+            remove_whitespace(&render(&spec_const.constraints, &spec_const.name))
         );
     }
     fn remove_whitespace(s: &str) -> String {

@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let spec = random_connected_specification(spec_id, size, true)
         .into_iter()
-        .map(|c| c.map(|clock| *clock as u32))
+        .map(|c| c.map_clocks(|clock| *clock as u32))
         .collect_vec();
     //decode_spec(gen, spec_id).unwrap();
     let variant = match app.cmd {
