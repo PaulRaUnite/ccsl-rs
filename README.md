@@ -1,4 +1,20 @@
 # CCSL-RS
+This a library implementing various structures and algorithms related to CCSL and its format LightCCSL.
+
+These include:
+- types for constraints
+- a clSTS representation and CCSL-to-clSTS translation
+- specification generation
+- LightCCSL parsing and rendering
+
+Tools:
+- `lccsl-gen` specification generator. More at [](#lightccsl-specification-generator).
+- `lccsl2dot` translates LightCCSL specifications into a graphviz DOT graph
+- `lccsl-sort` uses
+
+Experiments:
+- sorting and approximation algorithms, their testing, evaluation and plotting results
+- abstract interpretation model checker (nonoperational)
 
 ## Rust installation
 Please go to https://www.rust-lang.org/tools/install and follow the instructions 
@@ -9,23 +25,21 @@ One can test if everything installed correctly by opening new terminal window an
 Be sure Rust env variables were added to `~/.profile`.
 Session restart (log out/log in;system restart) may be required.
 
-## Optimization and approximation of CCSL solving
-How to reproduce:
-1. run `cargo run --release --bin main -- generate ./<path to data>/`,
-2. run `cargo run --release --bin main -- analyze ./<path to data>/<dataset>/`
-3. inspect generated CSV files in `./<path to data>/<dataset>/csv/`
+## Tools' usage
+### Without cloning:
+```bash
+cargo install --git=https://github.com/PaulRaUnite/ccsl-rs tools
+```
+This will add `lccsl2dot`, `lccsl-gen`, `lccsl-sort`, `pn2lccsl` command-line tools.
+Adding `--bin <tool-name>` will only install that tool.
 
-## LightCCSL specification generator
-
-Prerequisites: Rust and Git installed, few Gb of free disk space (for dependencies and module object files).
-
-Getting started:
+### With cloning:
 ```bash
 git clone https://github.com/PaulRaUnite/ccsl-rs.git
 cargo run --release --bin lccsl-gen -- --help
 ```
 
-or 
+or
 
 ```bash
 git clone https://github.com/PaulRaUnite/ccsl-rs.git
@@ -34,22 +48,32 @@ cargo build --release --bin lccsl-gen
 # or copy lccsl-gen(.exe?) to anywhere you like and run
 ```
 
-### Typical usage
-> `cargo run --release --bin lccsl-gen -- one --seed=0 --size=5`
+## Experiments
+### Optimization and approximation of CCSL solving
+How to reproduce:
+1. run `cargo run --release --bin main -- generate ./<path to data>/`,
+2. run `cargo run --release --bin main -- analyze ./<path to data>/<dataset>/`
+3. inspect generated CSV files in `./<path to data>/<dataset>/csv/`
 
-which writes a specification into the stdout. 
+## LightCCSL specification generator
+Generates several families of LightCCSL specifications:
+- random connected specification (if constrains would be hyperedges and clocks vertices, the resulting digraph is [weakly connected](https://en.wikipedia.org/wiki/Connectivity_(graph_theory)))
+- processing network: a digraph from a set of inputs into a set of outputs through several layers of vertices, this digraph's vertices are treated as clocks and edges as precedence constraints. Can add a random backpressure constraint between inputs and outputs.
+- precedence trees with or without backpressure constraints, it is a special case of processing network and are not randomly generated; produces all not isomorphic trees/specifications of a given size. 
+- cycles with "heads" and "tails": chains of precedences that are bounded in between the tail and head, can add another backpressure constraint between start and end clocks.
+
+### Typical usage
+`lccsl-gen one --seed=0 --size=5` which writes a random specification into stdout. 
 
 To obtain a random seed (at least in Linux (Unix?)), one can utilize `echo $RANDOM` or directly as an argument
-> `cargo run --release --bin lccsl-gen -- dir ./specs/ --amount=3 --seed=$RANDOM --size=5`.
+`lccsl-gen dir rand ./specs/ --amount=3 --seed=$RANDOM --size=5`.
 
 The seed then can be found in the name of the generated directory, if flag `--flatten` is not used.
 
-The tool uses parallelization of specification generation and writing into files. Can be disabled with `no_par` option.
-
-#### Examples
+### Examples
 1. generate a directory of random specifications
     ```bash
-   cargo run --release --bin lccsl-gen -- dir ./specs/ --amount=3 --seed=12345 --size=5
+   lccsl-gen dir rand ./specs/ --amount=3 --seed=12345 --size=5
     ```
     result:
    ```
@@ -74,7 +98,7 @@ The tool uses parallelization of specification generation and writing into files
    ```
 2. generate one specification (can be used to rebuild specification if only its name is available, i.e seed and size)
    ```bash
-   cargo run --release --bin lccsl-gen -- one --seed=12345 --size=5
+   lccsl-gen one --seed=12345 --size=5
    ```
    stdout:
    ```text
@@ -91,19 +115,4 @@ The tool uses parallelization of specification generation and writing into files
    ```
    With seed `10082841213727481447` same output as in the file `5-10082841213727481447.lc`.
 
-All the options are documented and can be retrieved
-by calling `cargo run --release --bin lccsl-gen -- --help` or `cargo run --release --bin lccsl-gen -- <subcommand> --help`.
-
-### General algorithm
-`dir` subcommand:
-1. Initialize a random generator with the provided seed
-2. Generate a list of seeds by the generator, of size `amount`
-3. Iteratively, using these seeds and provided size, generate and write specifications
-
-`one` subcommand (basically **the** algorithm):
-1. Initialize a random generator with seed
-2. While number of constrains is not `size`:
-   1. Randomly choose constraint type
-   2. Randomly choose clocks for constrain arguments from allowed range (`2*size` for now)
-   3. Make sure at least one clock was selected in previous constraints
-      (for "connectivity" between constrains)
+All the options are documented and can be retrieved by calling `lccsl-gen --help` and `lccsl-gen <subcommand> --help`.
