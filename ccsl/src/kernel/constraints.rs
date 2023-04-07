@@ -25,8 +25,8 @@ pub struct Coincidence<C> {
 
 impl<C> Coincidence<C> {
     pub(crate) fn map<B, F>(&self, mut f: F) -> Coincidence<B>
-        where
-            F: FnMut(&C) -> B,
+    where
+        F: FnMut(&C) -> B,
     {
         Coincidence {
             left: f(&self.left),
@@ -48,7 +48,6 @@ pub struct Causality<C> {
     pub init: Option<usize>,
     pub max: Option<usize>,
 }
-
 
 impl<C> Causality<C> {
     pub(crate) fn map<B, F>(&self, mut f: F) -> Causality<B>
@@ -793,6 +792,27 @@ impl<C: Display> Display for Repeat<C> {
     }
 }
 
+impl<C: Display> Display for Constraint<C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Constraint::Coincidence(c) => write!(f, "{}", c),
+            Constraint::Causality(c) => write!(f, "{}", c),
+            Constraint::Precedence(c) => write!(f, "{}", c),
+            Constraint::SubClock(c) => write!(f, "{}", c),
+            Constraint::Exclusion(c) => write!(f, "{}", c),
+            Constraint::Infinity(c) => write!(f, "{}", c),
+            Constraint::Supremum(c) => write!(f, "{}", c),
+            Constraint::Union(c) => write!(f, "{}", c),
+            Constraint::Intersection(c) => write!(f, "{}", c),
+            Constraint::Minus(c) => write!(f, "{}", c),
+            Constraint::Repeat(c) => write!(f, "{}", c),
+            Constraint::Delay(c) => write!(f, "{}", c),
+            Constraint::SampleOn(c) => write!(f, "{}", c),
+            Constraint::Diff(c) => write!(f, "{}", c),
+        }
+    }
+}
+
 impl<C, L> From<&'_ Constraint<C>> for STS<C, L>
 where
     C: Clone + Ord + Hash + Display,
@@ -832,7 +852,6 @@ impl<C> Constraint<C> {
         }
     }
 
-    // TODO: replace by map invocation
     pub fn clocks(&self) -> Vec<&C> {
         match self {
             Constraint::Coincidence(c) => vec![&c.left, &c.right],
