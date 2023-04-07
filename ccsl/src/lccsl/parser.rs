@@ -287,14 +287,23 @@ fn parse_let_expr(
     let mut constraints = Vec::new();
     let out: ID = inner.next().unwrap().as_str().to_string().into();
     let expr_out = parse_expression(inner, gen, &mut constraints);
-    let last = constraints.last_mut().unwrap();
-    *last = last.map_clocks(|c| {
-        if c == &expr_out {
-            out.clone()
-        } else {
-            c.clone()
-        }
-    });
+    if let Some(last) = constraints.last_mut() {
+        *last = last.map_clocks(|c| {
+            if c == &expr_out {
+                out.clone()
+            } else {
+                c.clone()
+            }
+        });
+    } else {
+        constraints.push(
+            Coincidence {
+                left: out,
+                right: expr_out,
+            }
+            .into(),
+        );
+    }
     constraints.into_iter()
 }
 
