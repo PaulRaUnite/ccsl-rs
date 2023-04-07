@@ -292,11 +292,11 @@ pub fn random_connected_specification(
 pub fn cycle_with_tail_and_spike(
     size: usize,
     tail: usize,
-    spike: usize,
+    head: usize,
     buffer: usize,
 ) -> Vec<Constraint<usize>> {
     let mut spec = vec![];
-    spec.extend(prec_chain(0..size + tail + spike));
+    spec.extend(prec_chain(0..size + tail + head));
     if buffer > 0 {
         // otherwise the
         spec.push(
@@ -347,7 +347,12 @@ pub fn trees_with_backpressure(
             .unwrap();
         let root = 0; // FIXME: is it??
         let mut spec = to_precedence_spec(&g);
-        spec.extend(point_backpressure(root, first_leaf.index(), buffer));
+        spec.extend(point_backpressure(
+            root,
+            first_leaf.index(),
+            buffer,
+            size + 1,
+        ));
         spec
     })
 }
@@ -430,8 +435,9 @@ pub fn point_backpressure<C: Clone>(
     input: C,
     output: C,
     buffer: usize,
+    next_clock: C,
 ) -> impl Iterator<Item = Constraint<C>> {
-    let delayed_input = input.clone();
+    let delayed_input = next_clock;
     [
         Delay {
             out: delayed_input.clone(),
@@ -450,3 +456,5 @@ pub fn point_backpressure<C: Clone>(
     ]
     .into_iter()
 }
+
+// TODO: train schedule and tracks specifications?

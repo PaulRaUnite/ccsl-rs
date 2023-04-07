@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use rand::{Rng, SeedableRng};
 use structopt::StructOpt;
 
-use ccsl::lccsl::format::render_lccsl;
+use ccsl::lccsl::format::render;
 
 use anyhow::{anyhow, Result};
 use ccsl::generation::graph::random_processing_network;
@@ -18,6 +18,7 @@ use ccsl::generation::specification::{
 use ccsl::kernel::constraints::Constraint;
 use itertools::Itertools;
 use rand::prelude::{SliceRandom, StdRng};
+use tools::file_or_stdout;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "lccsl-gen", about = "LightCCSL specification generator")]
@@ -95,12 +96,12 @@ enum Family {
         /// Size of the cycle
         #[structopt(short, long)]
         size: usize,
-        /// Size of tail (from 0 to the argument)
+        /// Size of a tail chain (from 0 to the argument)
         #[structopt(short, long)]
         tail_up_to: usize,
-        /// Size of spike (from 0 to the argument)
+        /// Size of a head chain (from 0 to the argument)
         #[structopt(short, long)]
-        spike_up_to: usize,
+        head_up_to: usize,
         /// Add backpressure constraint (between head and tail)
         #[structopt(short, long)]
         backpressure: Option<NonZeroUsize>,
@@ -133,9 +134,9 @@ fn generate_to_dir(
         );
         let spec = spec
             .into_iter()
-            .map(|c| c.map(|clock| format!("c{}", clock)))
+            .map(|c| c.map_clocks(|clock| format!("c{}", clock)))
             .collect_vec();
-        write!(spec_file, "{}", &render_lccsl(&spec, &spec_name))?;
+        write!(spec_file, "{}", &render(&spec, &spec_name))?;
     }
     Ok(())
 }
@@ -245,6 +246,9 @@ fn main() -> Result<()> {
                                 inputs.choose(&mut rng).unwrap().index(),
                                 outputs.choose(&mut rng).unwrap().index(),
                                 buffer.get(),
+                                dimensions.sinks
+                                    + dimensions.sources
+                                    + dimensions.intermediates.iter().sum::<usize>(),
                             ))
                         }
                         (format!("net_{}", seed), spec)
@@ -254,19 +258,20 @@ fn main() -> Result<()> {
                 Family::Cycle {
                     size,
                     tail_up_to,
-                    spike_up_to,
+                    head_up_to,
                     backpressure,
                 } => generate_to_dir(
                     &dir,
                     (0..tail_up_to)
-                        .cartesian_product(0..spike_up_to)
+                        .cartesian_product(0..head_up_to)
                         .map(|(tail, spike)| {
-                            let mut spec = cycle_with_tail_and_spike(size, tail, spike_up_to, 1);
+                            let mut spec = cycle_with_tail_and_spike(size, tail, head_up_to, 1);
                             if let Some(buffer) = backpressure {
                                 spec.extend(point_backpressure(
                                     0,
-                                    size + tail_up_to + spike_up_to,
+                                    size + tail_up_to + head_up_to,
                                     buffer.get(),
+                                    size + tail_up_to + head_up_to + 1,
                                 ))
                             }
                             (format!("cycle_{}_{}_{}", tail, size, spike), spec)
@@ -277,12 +282,7 @@ fn main() -> Result<()> {
         Cmd::One { size, seed, file } => {
             let spec_name = format!("rand_{}_{}", size, seed);
             let spec = random_connected_specification(seed, size, true);
-            if let Some(filepath) = file {
-                let file = OpenOptions::new().write(true).create(true).open(filepath)?;
-                write!(BufWriter::new(file), "{}", &render_lccsl(&spec, &spec_name))?;
-            } else {
-                write!(std::io::stdout(), "{}", &render_lccsl(&spec, &spec_name))?;
-            };
+            write!(file_or_stdout(&file)?, "{}", &render(&spec, &spec_name))?;
         }
     }
     Ok(())
