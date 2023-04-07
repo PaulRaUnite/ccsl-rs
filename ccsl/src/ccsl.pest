@@ -32,5 +32,5 @@ expression = {term ~ (operation ~ term)* }
 term = _{ prefix_expr | "(" ~ expression ~ ")" | id  }
 
 int = @{ "-"? ~ ASCII_DIGIT+ }
-id = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-")* }
+id = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-" | "_")* }
 WHITESPACE = _{ " " | NEWLINE}
