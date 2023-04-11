@@ -7,7 +7,7 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Parser;
 use thiserror::Error;
 
-use crate::lccsl::constraints::*;
+use crate::kernel::constraints::*;
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::iter::FromIterator;
@@ -21,6 +21,7 @@ pub fn parse_raw(input: &str) -> Result<Pair<Rule>, pest::error::Error<Rule>> {
     Ok(LightCCSLParser::parse(Rule::file, input)?.next().unwrap())
 }
 
+// TODO: unify with another Specification
 #[derive(Debug, Clone)]
 pub struct Specification<C> {
     pub name: String,
@@ -40,6 +41,8 @@ pub enum ParseError {
 // TODO: parse into a specialized AST/enum, not directly into constrains,
 //  for reasons of encoding/decoding roundtrip: some constraints
 //  are split and so do not preserve the initial structure.
+//  Main problem is that some expression can nest, creating anonymous clocks,
+//  which then are rendered explicitly in roundtrip test.
 
 pub fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
@@ -98,7 +101,7 @@ pub fn parse_to_u32(input: &str) -> Result<Specification<u32>, ParseError> {
         constraints: spec
             .constraints
             .iter()
-            .map(|c| c.map(&mut |c| *unique_clocks.get(&c).unwrap()))
+            .map(|c| c.map_clocks(|c| *unique_clocks.get(&c).unwrap()))
             .collect(),
     })
 }
@@ -135,7 +138,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
             .constraints
             .iter()
             .map(|c| {
-                c.map(&mut |c| match c {
+                c.map_clocks(|c| match c {
                     ID::C(s) => s.clone(),
                     ID::G(n) => format!("{}{}", prefix, n),
                 })
@@ -278,14 +281,23 @@ fn parse_let_expr(
     let mut constraints = Vec::new();
     let out: ID = inner.next().unwrap().as_str().to_string().into();
     let expr_out = parse_expression(inner, gen, &mut constraints);
-    let last = constraints.last_mut().unwrap();
-    *last = last.map(&mut |c| {
-        if c == &expr_out {
-            out.clone()
-        } else {
-            c.clone()
-        }
-    });
+    if let Some(last) = constraints.last_mut() {
+        *last = last.map_clocks(|c| {
+            if c == &expr_out {
+                out.clone()
+            } else {
+                c.clone()
+            }
+        });
+    } else {
+        constraints.push(
+            Coincidence {
+                left: out,
+                right: expr_out,
+            }
+            .into(),
+        );
+    }
     constraints.into_iter()
 }
 
@@ -425,10 +437,16 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
     }
 }
 
+impl<T> From<Specification<T>> for crate::kernel::constraints::Specification<T> {
+    fn from(spec: Specification<T>) -> Self {
+        Self(spec.constraints)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::format::to_lccsl;
+    use crate::lccsl::format::render;
 
     #[test]
     fn it_works() {
@@ -468,10 +486,10 @@ mod tests {
             ]
         }";
         let spec_const = parse_to_string(spec).expect("should parse");
-        let spec = to_lccsl(&spec_const.constraints, &spec_const.name);
+        let spec = render(&spec_const.constraints, &spec_const.name);
         assert_eq!(
             remove_whitespace(&spec),
-            remove_whitespace(&to_lccsl(&spec_const.constraints, &spec_const.name))
+            remove_whitespace(&render(&spec_const.constraints, &spec_const.name))
         );
     }
     fn remove_whitespace(s: &str) -> String {

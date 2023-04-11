@@ -1,0 +1,15 @@
+[package]
+name = "tools"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ccsl={path="../ccsl"}
+structopt = "0.3"
+petgraph = "0.6"
+itertools = "0.10"
+rand = "0.8"
+anyhow = "1"

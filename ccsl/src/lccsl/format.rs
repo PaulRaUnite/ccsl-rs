@@ -1,9 +1,9 @@
-use crate::lccsl::constraints::Constraint;
+use crate::kernel::constraints::Constraint;
 use itertools::Itertools;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
-pub fn to_lccsl<C>(spec: &[Constraint<C>], name: &str) -> String
+pub fn render<C>(spec: &[Constraint<C>], name: &str) -> String
 where
     C: Display + Ord,
 {
@@ -20,19 +20,50 @@ Specification {} {{
         name,
         clocks.into_iter().join(","),
         spec.iter()
-            .map(|c| format!("        {}", c.to_lccsl()))
+            .map(|c| format!("        {}", render_constraint(c)))
             .join("\n"),
     )
+}
+
+// TODO: add Display (?) newtype to get rid of unnecessary allocations
+pub fn render_constraint<C>(c: &Constraint<C>) -> String
+where
+    C: Display,
+{
+    match c {
+        Constraint::Coincidence(c) => format!("Let {} be {}", c.left, c.right),
+        Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right),
+        Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
+        Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
+        Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
+        Constraint::Infinity(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
+        Constraint::Supremum(c) => format!("Let {} be sup({}, {})", c.out, c.left, c.right),
+        Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join(" + ")),
+        Constraint::Intersection(c) => {
+            format!("Let {} be {}", c.out, c.args.iter().join(" * "))
+        }
+        Constraint::Minus(c) => format!("Let {} be {} - {}", c.out, c.left, c.right,),
+        Constraint::Repeat(c) => format!(
+            "repeat {} every {} {} {} {}",
+            c.out,
+            c.every,
+            c.base,
+            c.from.map_or("".to_owned(), |v| format!("from {}", v)),
+            c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
+        ),
+        Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
+        Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.trigger, c.base),
+        Constraint::Diff(c) => format!("{} = {} [{}, {}]", c.out, c.base, c.from, c.up_to),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lccsl::constraints::{
+    use crate::kernel::constraints::{
         Causality, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
         Subclocking, Supremum, Union,
     };
-    use crate::lccsl::generation::random_connected_specification;
     use crate::lccsl::parser::parse_raw;
 
     #[test]
@@ -106,32 +137,9 @@ mod tests {
             .into(),
         ];
 
-        let lccsl_format = to_lccsl(&spec, "test");
+        let lccsl_format = render(&spec, "test");
         let result = parse_raw(&lccsl_format);
 
         assert!(matches!(result, Ok(_)), "{:?}", result);
-    }
-
-    #[test]
-    fn random_fixed() {
-        let spec = random_connected_specification(0, 5, true)
-            .into_iter()
-            .map(|c| c.map(&mut |clock| format!("c{}", clock)))
-            .collect_vec();
-        let lccsl_format = to_lccsl(&spec, "test");
-        let result = parse_raw(&lccsl_format);
-
-        assert!(matches!(result, Ok(_)));
-    }
-    #[test]
-    fn random_unfixed() {
-        let spec = random_connected_specification(0, 5, false)
-            .into_iter()
-            .map(|c| c.map(&mut |clock| format!("c{}", clock)))
-            .collect_vec();
-        let lccsl_format = to_lccsl(&spec, "test");
-        let result = parse_raw(&lccsl_format);
-
-        assert!(matches!(result, Ok(_)));
     }
 }

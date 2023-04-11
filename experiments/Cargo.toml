@@ -1,0 +1,27 @@
+[package]
+name = "experiments"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ccsl={path="../ccsl"}
+absint={path="../absint"}
+structopt = "0.3"
+petgraph = "0.6"
+itertools = "0.10"
+serde = { version = "1", features = ["derive"] }
+csv = "1.1"
+num = "0.4"
+rayon = "1.7"
+parquet = "36.0.0"
+arrow = "36.0.0"
+lehmer = "3"
+rand = "0.8"
+permutation = "0.4"
+anyhow = "1"
+polars = { version= "0.28.0",features = [ "lazy", "parquet", "csv-file" ] }
+walkdir = "2"
+soa_derive = "0.12"

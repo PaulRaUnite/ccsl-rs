@@ -2,31 +2,20 @@
 extern crate pest_derive;
 #[macro_use]
 extern crate lazy_static;
-extern crate core;
 
-pub mod lccsl {
-    pub mod constraints;
+pub mod generation;
+pub mod kernel;
+pub mod lccsl;
 
-    pub mod automata;
+pub mod sort {}
+pub mod complexity {}
 
-    pub mod parser;
+// TODO: rename the module and functions in it
+pub mod algo;
 
-    pub mod runner;
+pub mod visualisation;
 
-    pub mod expressions;
+pub mod analysis;
+pub mod optimization;
 
-    // TODO: rename the module and functions in it
-    pub mod algo;
-
-    pub mod vizualization;
-
-    pub mod generation;
-
-    pub mod optimization;
-
-    pub mod format;
-
-    pub mod analysis;
-}
-
-pub mod interpretation;
+pub mod dot;

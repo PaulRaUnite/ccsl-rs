@@ -1,24 +1,28 @@
 [package]
 name = "ccsl"
-version = "0.1.0"
-authors = ["Pavlo Tokariev <pavlo.tokariev@gmail.com>"]
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pest = "2.4"
-pest_derive = "2.4"
-thiserror = "1.0"
+thiserror = "1"
 petgraph = "0.6"
 itertools = "0.10"
 num = "0.4"
 rand = "0.8"
 permutation = "0.4"
+map-macro = "0.2"
+dot = "0.1.4"
+pest = "2.4"
+pest_derive = "2.4"
+lazy_static = "1.4"
 roaring = "0.10"
 bitmaps = "3.2"
-lazy_static = "1.4"
-map-macro = "0.2"
+anyhow = "1"
+structopt = "0.3"
+absint={path="../absint"}
 
 [dependencies.nbac_format]
 git="ssh://git@github.com/PaulRaUnite/nbac_format.git"
