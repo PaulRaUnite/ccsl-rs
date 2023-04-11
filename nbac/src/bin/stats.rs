@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::Duration;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -12,7 +11,7 @@ use walkdir::WalkDir;
 #[derive(StructOpt, Debug)]
 #[structopt(
     name = "stats",
-    about = "Compiles LightCCSL specifications into NBAC format"
+    about = "Checks regressions for NBAC vs Marked graph boundness check"
 )]
 struct App {
     #[structopt(subcommand)]
@@ -70,7 +69,7 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
             .arg(&nbac_file)
             .output()?;
         if !output.status.success() {
-            errs.write_record(&[
+            errs.write_record([
                 &filename,
                 from_utf8(&output.stdout).unwrap(),
                 from_utf8(&output.stderr).unwrap(),
@@ -87,7 +86,7 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
             .arg(&nbac_file)
             .output()?;
         if !output.stderr.is_empty() {
-            errs.write_record(&[
+            errs.write_record([
                 &filename,
                 from_utf8(&output.stdout).unwrap(),
                 from_utf8(&output.stderr).unwrap(),

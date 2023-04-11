@@ -1,4 +1,3 @@
-use crate::lccsl::automata::Delta;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::iter::once;

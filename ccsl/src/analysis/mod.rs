@@ -31,9 +31,7 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
         let mut invariants = vec![];
         for c in spec {
             let invariant: Invariant<C> = c.map_ref_into();
-            invariant
-                .0
-                .leaves(&mut counters, &mut clocks, &mut vec![], &mut vec![]);
+            invariant.0.leaves(&mut counters, &mut clocks);
             invariants.push(invariant);
         }
         ProgramEffects {

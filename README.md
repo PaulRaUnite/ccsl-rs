@@ -8,7 +8,7 @@ These include:
 - LightCCSL parsing and rendering
 
 Tools:
-- `lccsl-gen` specification generator. More at [](#lightccsl-specification-generator).
+- `lccsl-gen` specification generator. More at corresponding [section](#lightccsl-specification-generator).
 - `lccsl2dot` translates LightCCSL specifications into a graphviz DOT graph
 - `lccsl-sort` uses
 

@@ -493,6 +493,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "map-macro",
+ "nbac_format",
  "num",
  "permutation",
  "pest",
@@ -1380,6 +1381,15 @@ dependencies = [
  "quote",
  "syn 1.0.109",
  "target-features",
+]
+
+[[package]]
+name = "nbac_format"
+version = "0.1.0"
+source = "git+ssh://git@github.com/PaulRaUnite/nbac_format.git#7b090f89ee149084a61d0bce3aefb419dc0ba081"
+dependencies = [
+ "derive_more",
+ "itertools",
 ]
 
 [[package]]
