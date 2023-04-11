@@ -9,7 +9,7 @@ use structopt::StructOpt;
 use tools::file_or_stdout;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "lccsl-gen", about = "LightCCSL specification formatter")]
+#[structopt(name = "lccsl-fmt", about = "LightCCSL specification formatter")]
 struct App {
     file: PathBuf,
     out: Option<PathBuf>,

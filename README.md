@@ -116,3 +116,6 @@ The seed then can be found in the name of the generated directory, if flag `--fl
    With seed `10082841213727481447` same output as in the file `5-10082841213727481447.lc`.
 
 All the options are documented and can be retrieved by calling `lccsl-gen --help` and `lccsl-gen <subcommand> --help`.
+
+## `ccsl2dot`
+Example of usage: `lccsl-gen one --seed=$RANDOM --size=5 | ccsl2dot | dot -Tsvg -o ./example.svg`

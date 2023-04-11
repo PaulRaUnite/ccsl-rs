@@ -1,7 +1,10 @@
+//! Implements translation of LightCCSL into graphviz DOT format.
+
 use crate::kernel::constraints::Constraint;
 use dot::{Arrow, ArrowShape, Edges, Fill, GraphWalk, Id, Kind, LabelText, Labeller, Nodes, Style};
 use itertools::Itertools;
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -10,15 +13,20 @@ use std::io::{Result, Write};
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 enum Node<C> {
     Clock(C),
-    HyperNode(String),
+    HyperNode {
+        id: String,
+        label: String,
+        color: &'static str,
+    },
 }
 
 #[derive(Clone)]
 struct Edge {
-    text: Option<String>,
+    text: Option<Cow<'static, str>>,
     start_shape: Arrow,
     end_shape: Arrow,
     style: Style,
+    color: &'static str,
 }
 
 impl Default for Edge {
@@ -27,7 +35,28 @@ impl Default for Edge {
             text: None,
             start_shape: Arrow::default(),
             end_shape: Arrow::default(),
-            style: Style::Bold,
+            style: Style::Solid,
+            color: "black",
+        }
+    }
+}
+impl Edge {
+    fn asyncronous() -> Self {
+        Self {
+            text: None,
+            start_shape: Arrow::default(),
+            end_shape: Arrow::default(),
+            style: Style::None,
+            color: "black",
+        }
+    }
+    fn syncronous() -> Self {
+        Self {
+            text: None,
+            start_shape: solid_ball_arrow(),
+            end_shape: solid_ball_arrow(),
+            style: Style::Dashed,
+            color: "firebrick1",
         }
     }
 }
@@ -37,6 +66,11 @@ struct SpecificationGraph<C>(String, DiGraph<Node<C>, Edge>);
 type NodeRef = NodeIndex;
 type EdgeRef = EdgeIndex;
 
+fn solid_ball_arrow() -> Arrow {
+    Arrow::from_arrow(ArrowShape::Dot(Fill::Filled))
+}
+
+/// Renders CCSL specification into a generic Writer.
 pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
     w: &mut W,
     name: &str,
@@ -51,56 +85,287 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
     };
     let spec = spec
         .iter()
-        .map(|c| c.map_clocks(|clock| node(clock)))
+        .map(|c| (constraint_to_dot_label(c), c.map_clocks(&mut node)))
         .collect_vec();
-    for constraint in spec {
+    for (node_label, constraint) in spec {
         match constraint {
-            Constraint::Coincidence(c) => {}
+            Constraint::Coincidence(c) => {
+                g.add_edge(
+                    c.left,
+                    c.right,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+            }
             Constraint::Causality(c) => {
                 g.add_edge(
                     c.left,
                     c.right,
                     Edge {
-                        text: Some("<".to_string()),
-                        start_shape: Arrow::default(),
-                        end_shape: Arrow::default(),
-                        style: Style::None,
+                        text: Some(Cow::Borrowed("&#x227C;")),
+                        ..Edge::asyncronous()
                     },
                 );
             }
-            Constraint::Precedence(p) => {
+            Constraint::Precedence(c) => {
                 g.add_edge(
-                    p.left,
-                    p.right,
+                    c.left,
+                    c.right,
                     Edge {
-                        text: Some("<=".to_string()),
-                        start_shape: Arrow::default(),
-                        end_shape: Arrow::default(),
-                        style: Style::None,
+                        text: Some(Cow::Borrowed("&#x227A;")),
+                        ..Edge::asyncronous()
                     },
                 );
             }
-            Constraint::SubClock(sub) => {}
-            Constraint::Exclusion(ex) => {}
-            Constraint::Infinity(inf) => {}
-            Constraint::Supremum(sup) => {}
-            Constraint::Union(un) => {}
-            Constraint::Intersection(int) => {}
-            Constraint::Minus(minus) => {}
-            Constraint::Repeat(repeat) => {}
+            Constraint::SubClock(c) => {
+                g.add_edge(
+                    c.left,
+                    c.right,
+                    Edge {
+                        text: Some(Cow::Borrowed("&sube;")),
+                        start_shape: Arrow::none(),
+                        ..Edge::syncronous()
+                    },
+                );
+            }
+            Constraint::Exclusion(c) => {
+                let exclusion_node = g.add_node(Node::HyperNode {
+                    id: format!("exclusion_{}", c.clocks.iter().map(|i| i.index()).join("_")),
+                    label: node_label,
+                    color: "black",
+                });
+                for clock in c.clocks.iter() {
+                    g.add_edge(
+                        exclusion_node,
+                        *clock,
+                        Edge {
+                            text: Some(Cow::Borrowed("&sube;")),
+                            start_shape: Arrow::none(),
+                            end_shape: Arrow::none(),
+                            ..Edge::syncronous()
+                        },
+                    );
+                }
+            }
+            Constraint::Infinity(inf) => {
+                let infinum_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "inf_{}_{}_{}",
+                        inf.out.index(),
+                        inf.left.index(),
+                        inf.right.index()
+                    ),
+                    label: node_label,
+                    color: "firebrick1",
+                });
+                g.add_edge(
+                    infinum_node,
+                    inf.out,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+                g.add_edge(inf.left, infinum_node, Edge::asyncronous());
+                g.add_edge(inf.right, infinum_node, Edge::asyncronous());
+            }
+            Constraint::Supremum(sup) => {
+                let supremum_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "sup_{}_{}_{}",
+                        sup.out.index(),
+                        sup.left.index(),
+                        sup.right.index()
+                    ),
+                    label: node_label,
+                    color: "firebrick1",
+                });
+                g.add_edge(
+                    supremum_node,
+                    sup.out,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+                g.add_edge(sup.left, supremum_node, Edge::asyncronous());
+                g.add_edge(sup.right, supremum_node, Edge::asyncronous());
+            }
+            Constraint::Union(un) => {
+                let union_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "union_{}_{}",
+                        un.out.index(),
+                        un.args.iter().map(|i| i.index()).join("_")
+                    ),
+                    label: node_label,
+                    color: "black",
+                });
+                g.add_edge(
+                    union_node,
+                    un.out,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+                for clock in un.args.iter() {
+                    g.add_edge(
+                        union_node,
+                        *clock,
+                        Edge {
+                            text: Some(Cow::Borrowed("&or;")),
+                            start_shape: solid_ball_arrow(),
+                            end_shape: Arrow::none(),
+                            ..Edge::syncronous()
+                        },
+                    );
+                }
+            }
+            Constraint::Intersection(int) => {
+                let int_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "int_{}_{}",
+                        int.out.index(),
+                        int.args.iter().map(|i| i.index()).join("_")
+                    ),
+                    label: node_label,
+                    color: "black",
+                });
+                g.add_edge(
+                    int_node,
+                    int.out,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+                for clock in int.args.iter() {
+                    g.add_edge(
+                        int_node,
+                        *clock,
+                        Edge {
+                            text: Some(Cow::Borrowed("&and;")),
+                            start_shape: Arrow::none(),
+                            end_shape: solid_ball_arrow(),
+                            ..Edge::syncronous()
+                        },
+                    );
+                }
+            }
+            Constraint::Minus(minus) => {
+                let minus_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "inf_{}_{}_{}",
+                        minus.out.index(),
+                        minus.left.index(),
+                        minus.right.index()
+                    ),
+                    label: node_label,
+                    color: "black",
+                });
+                g.add_edge(
+                    minus_node,
+                    minus.out,
+                    Edge {
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
+                    },
+                );
+                g.add_edge(
+                    minus.left,
+                    minus_node,
+                    Edge {
+                        start_shape: solid_ball_arrow(),
+                        ..Edge::syncronous()
+                    },
+                );
+                g.add_edge(minus.right, minus_node, Edge::syncronous());
+            }
+            Constraint::Repeat(repeat) => {
+                g.add_edge(
+                    repeat.base,
+                    repeat.out,
+                    Edge {
+                        text: Some(Cow::Owned(node_label)),
+                        ..Edge::syncronous()
+                    },
+                );
+            }
             Constraint::Delay(delay) => {
+                if let Some(on) = delay.on {
+                    let delay_node = g.add_node(Node::HyperNode {
+                        id: format!(
+                            "delay_{}_{}_{}_{}",
+                            delay.out.index(),
+                            delay.base.index(),
+                            delay.delay,
+                            on.index(),
+                        ),
+                        label: node_label,
+                        color: "black",
+                    });
+                    g.add_edge(
+                        delay_node,
+                        delay.out,
+                        Edge {
+                            text: Some(Cow::Borrowed("=")),
+                            ..Edge::syncronous()
+                        },
+                    );
+                    g.add_edge(delay.base, delay_node, Edge::asyncronous());
+                    g.add_edge(
+                        on,
+                        delay_node,
+                        Edge {
+                            start_shape: solid_ball_arrow(),
+                            ..Edge::syncronous()
+                        },
+                    );
+                } else {
+                    g.add_edge(
+                        delay.out,
+                        delay.base,
+                        Edge {
+                            text: Some(Cow::Owned(node_label)),
+                            end_shape: solid_ball_arrow(),
+                            ..Edge::syncronous()
+                        },
+                    );
+                }
+            }
+            Constraint::SampleOn(sample) => {
+                let sample_node = g.add_node(Node::HyperNode {
+                    id: format!(
+                        "sample_{}_{}_{}",
+                        sample.out.index(),
+                        sample.base.index(),
+                        sample.trigger.index()
+                    ),
+                    label: node_label,
+                    color: "firebrick1",
+                });
                 g.add_edge(
-                    delay.out,
-                    delay.base,
+                    sample_node,
+                    sample.out,
                     Edge {
-                        text: Some(format!("delayed by {}", delay.delay)),
-                        start_shape: Arrow::from_arrow(ArrowShape::Dot(Fill::Filled)),
-                        end_shape: Arrow::default(),
-                        style: Style::Dashed,
+                        start_shape: Arrow::default(),
+                        text: Some(Cow::Borrowed("=")),
+                        ..Edge::syncronous()
                     },
                 );
+                g.add_edge(
+                    sample.base,
+                    sample_node,
+                    Edge {
+                        start_shape: Arrow::default(),
+                        ..Edge::syncronous()
+                    },
+                );
+                g.add_edge(sample.trigger, sample_node, Edge::asyncronous());
             }
-            Constraint::SampleOn(sample) => {}
             Constraint::Diff(diff) => panic!("wtf is diff"),
         }
     }
@@ -108,6 +373,37 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
     dot::render(&g, w)
 }
 
+fn constraint_to_dot_label<C: Display>(c: &Constraint<C>) -> String {
+    match c {
+        Constraint::Coincidence(c) => format!("{} = {}", c.left, c.right),
+        Constraint::Causality(c) => format!("{} &#x227C; {}", c.left, c.right),
+        Constraint::Precedence(c) => format!("{} &#x227A; {}", c.left, c.right),
+        Constraint::SubClock(c) => format!("{} &sube; {}", c.left, c.right),
+        Constraint::Exclusion(c) => c.clocks.iter().join("#"),
+        Constraint::Infinity(c) => format!("{} = inf({}, {})", c.out, c.left, c.right),
+        Constraint::Supremum(c) => format!("{} = sup({}, {})", c.out, c.left, c.right),
+        Constraint::Union(c) => format!("{} = &cup;({})", c.out, c.args.iter().join(",")),
+        Constraint::Intersection(c) => format!("{} = &cap;({})", c.out, c.args.iter().join(",")),
+        Constraint::Minus(c) => format!("{} = {} - {}", c.out, c.left, c.right),
+        Constraint::Repeat(c) => format!(
+            "{}=each {} of {} [{},{}]",
+            c.out,
+            c.every,
+            c.base,
+            c.from.map_or("-&infin;".to_owned(), |v| v.to_string()),
+            c.up_to.map_or("+&infin;".to_owned(), |v| v.to_string())
+        ),
+        Constraint::Delay(c) => format!(
+            "{} = {} delayed by {}{}",
+            c.out,
+            c.base,
+            c.delay,
+            c.on.as_ref().map_or("".to_owned(), |v| format!("on {}", v))
+        ),
+        Constraint::SampleOn(c) => format!("{}", c),
+        Constraint::Diff(c) => format!("{}", c),
+    }
+}
 impl<'a, C: Display> Labeller<'a, NodeRef, EdgeRef> for SpecificationGraph<C> {
     fn graph_id(&'a self) -> Id<'a> {
         Id::new(&self.0).unwrap()
@@ -116,7 +412,7 @@ impl<'a, C: Display> Labeller<'a, NodeRef, EdgeRef> for SpecificationGraph<C> {
     fn node_id(&'a self, n: &NodeRef) -> Id<'a> {
         match self.1.node_weight(*n).unwrap() {
             Node::Clock(c) => Id::new(format!("c{}", c)),
-            Node::HyperNode(s) => Id::new(s),
+            Node::HyperNode { id, .. } => Id::new(id),
         }
         .unwrap()
     }
@@ -128,14 +424,14 @@ impl<'a, C: Display> Labeller<'a, NodeRef, EdgeRef> for SpecificationGraph<C> {
     fn node_label(&'a self, n: &NodeRef) -> LabelText<'a> {
         match self.1.node_weight(*n).unwrap() {
             Node::Clock(c) => LabelText::label(c.to_string()),
-            Node::HyperNode(s) => LabelText::label(s),
+            Node::HyperNode { label, .. } => LabelText::label(label),
         }
     }
 
     fn edge_label(&'a self, e: &EdgeRef) -> LabelText<'a> {
         let w = self.1.edge_weight(*e).unwrap();
         if let Some(text) = &w.text {
-            LabelText::label(text)
+            LabelText::label(text.as_ref())
         } else {
             LabelText::label("")
         }
@@ -144,14 +440,14 @@ impl<'a, C: Display> Labeller<'a, NodeRef, EdgeRef> for SpecificationGraph<C> {
     fn node_style(&'a self, n: &NodeRef) -> Style {
         match self.1.node_weight(*n).unwrap() {
             Node::Clock(_) => Style::Rounded,
-            Node::HyperNode(_) => Style::Wedged,
+            Node::HyperNode { .. } => Style::None,
         }
     }
 
     fn node_color(&'a self, n: &NodeRef) -> Option<LabelText<'a>> {
         Some(match self.1.node_weight(*n).unwrap() {
             Node::Clock(_) => LabelText::label("black"),
-            Node::HyperNode(_) => LabelText::label("redbrick1"),
+            Node::HyperNode { color, .. } => LabelText::label(*color),
         })
     }
 
@@ -168,7 +464,7 @@ impl<'a, C: Display> Labeller<'a, NodeRef, EdgeRef> for SpecificationGraph<C> {
     }
 
     fn edge_color(&'a self, e: &EdgeRef) -> Option<LabelText<'a>> {
-        None
+        Some(LabelText::label(self.1.edge_weight(*e).unwrap().color))
     }
 
     fn kind(&self) -> Kind {
