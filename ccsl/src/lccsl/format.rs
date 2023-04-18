@@ -53,7 +53,15 @@ where
         ),
         Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
         Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.trigger, c.base),
-        Constraint::Diff(c) => format!("{} = {} [{}, {}]", c.out, c.base, c.from, c.up_to),
+        Constraint::Diff(c) => format!(
+            "{} = {} [{}, {}]",
+            c.out,
+            c.base,
+            c.from,
+            c.up_to
+                .as_ref()
+                .map_or("Infinity".to_owned(), ToString::to_string)
+        ),
     }
 }
 
@@ -61,8 +69,8 @@ where
 mod tests {
     use super::*;
     use crate::kernel::constraints::{
-        Causality, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
-        Subclocking, Supremum, Union,
+        Causality, Delay, Exclusion, Infinum, Intersection, Minus, Precedence, Repeat, Subclocking,
+        Supremum, Union,
     };
     use crate::lccsl::parser::parse_raw;
 
@@ -92,7 +100,7 @@ mod tests {
                 clocks: vec!["a", "b", "c"].into_iter().collect(),
             }
             .into(),
-            Infinity {
+            Infinum {
                 out: "c",
                 left: "a",
                 right: "b",
@@ -118,6 +126,14 @@ mod tests {
                 out: "c",
                 left: "a",
                 right: "b",
+            }
+            .into(),
+            Repeat {
+                out: "a",
+                every: 1,
+                base: "b",
+                from: Some(0),
+                up_to: Some(2),
             }
             .into(),
             Repeat {

@@ -1,21 +1,21 @@
-use crate::kernel::automata::Delta;
-use crate::kernel::constraints::{
-    Causality, Coincidence, Constraint, Delay, Diff, Exclusion, Infinity, Intersection, Minus,
-    Precedence, Repeat, SampleOn, Specification, Subclocking, Supremum, Union,
-};
-use crate::kernel::expressions::{
-    BooleanComparisonKind, BooleanExpression, IntegerComparisonKind, IntegerExpression,
-};
-use absint::boolean::Bool;
-use absint::interval::Interval;
-use absint::{Lattice, Prec, SequenceLimiter, Succ};
-use derive_more::From;
-use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{BitAnd, BitOr, Deref, Not};
+
+use derive_more::From;
+use itertools::Itertools;
+
+use absint::boolean::Bool;
+use absint::interval::Interval;
+use absint::{Lattice, Prec, SequenceLimiter, Succ};
+
+use crate::kernel::automata::Delta;
+use crate::kernel::constraints::Specification;
+use crate::kernel::expressions::{
+    BooleanComparisonKind, BooleanExpression, IntegerComparisonKind, IntegerExpression,
+};
 
 #[derive(Debug, Clone)]
 struct ProgramEffects<C> {
@@ -24,14 +24,16 @@ struct ProgramEffects<C> {
     invariant: Invariant<C>,
 }
 
+pub mod ts;
+
 impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
     fn from(spec: &'_ Specification<C>) -> Self {
         let mut clocks = vec![];
         let mut counters = vec![];
         let mut invariants = vec![];
         for c in spec {
-            let invariant: Invariant<C> = c.map_ref_into();
-            invariant.0.leaves(&mut counters, &mut clocks);
+            let invariant: Invariant<C> = Invariant(BooleanExpression::Constant(true));// FIXME: it is completely disabled
+            invariant.0.visit(&mut counters, &mut clocks);
             invariants.push(invariant);
         }
         ProgramEffects {
@@ -59,139 +61,11 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
 #[derive(Debug, Clone, From)]
 pub struct Invariant<C>(pub BooleanExpression<Delta<C>, C>);
 
-impl<C: Clone> From<&'_ Coincidence<C>> for Invariant<C> {
-    fn from(c: &'_ Coincidence<C>) -> Self {
-        let a = BooleanExpression::var(c.left.clone());
-        let b = BooleanExpression::var(c.right.clone());
-        a.eq(b).into()
-    }
-}
-impl<C: Clone> From<&'_ Causality<C>> for Invariant<C> {
-    fn from(c: &'_ Causality<C>) -> Self {
-        let a = BooleanExpression::var(c.left.clone());
-        let b = BooleanExpression::var(c.right.clone());
-        (IntegerExpression::var(Delta(c.left.clone(), c.right.clone())).eq(0) & b)
-            .implies(a)
-            .into()
-    }
-}
-impl<C: Clone> From<&'_ Precedence<C>> for Invariant<C> {
-    fn from(c: &'_ Precedence<C>) -> Self {
-        let ab = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
-        let b = BooleanExpression::var(c.right.clone());
-        (ab.eq(0).implies(!b)).into()
-    }
-}
-
-impl<C: Clone> From<&'_ Subclocking<C>> for Invariant<C> {
-    fn from(c: &'_ Subclocking<C>) -> Self {
-        let a = BooleanExpression::var(c.left.clone());
-        let b = BooleanExpression::var(c.right.clone());
-        a.implies(b).into()
-    }
-}
-
-impl<C: Clone> From<&'_ Exclusion<C>> for Invariant<C> {
-    fn from(c: &'_ Exclusion<C>) -> Self {
-        // TODO: probably doesn't allow empty step
-        (c.clocks
-            .iter()
-            .tuple_combinations::<(_, _)>()
-            .map(|(x, y)| {
-                let x = BooleanExpression::var(x.clone());
-                let y = BooleanExpression::var(y.clone());
-                !(x & y)
-            })
-            .reduce(BitAnd::bitand)
-            .unwrap()
-            | c.clocks
-                .iter()
-                .cloned()
-                .map(BooleanExpression::var)
-                .map(Not::not)
-                .reduce(BitAnd::bitand)
-                .unwrap())
-        .into()
-    }
-}
-
-impl<C: Clone> From<&'_ Infinity<C>> for Invariant<C> {
-    fn from(_: &'_ Infinity<C>) -> Self {
-        unimplemented!()
-    }
-}
-
-impl<C: Clone> From<&'_ Supremum<C>> for Invariant<C> {
-    fn from(_: &'_ Supremum<C>) -> Self {
-        unimplemented!()
-    }
-}
-
-impl<C: Clone> From<&'_ Union<C>> for Invariant<C> {
-    fn from(c: &'_ Union<C>) -> Self {
-        let out = BooleanExpression::var(c.out.clone());
-        c.args
-            .iter()
-            .cloned()
-            .map(BooleanExpression::var)
-            .reduce(BitOr::bitor)
-            .map(|e| e.eq(out))
-            .unwrap()
-            .into()
-    }
-}
-impl<C: Clone> From<&'_ Intersection<C>> for Invariant<C> {
-    fn from(c: &'_ Intersection<C>) -> Self {
-        let out = BooleanExpression::var(c.out.clone());
-        c.args
-            .iter()
-            .cloned()
-            .map(BooleanExpression::var)
-            .reduce(BitAnd::bitand)
-            .map(|e| e.eq(out))
-            .unwrap()
-            .into()
-    }
-}
-impl<C: Clone> From<&'_ Minus<C>> for Invariant<C> {
-    fn from(c: &'_ Minus<C>) -> Self {
-        let a = BooleanExpression::var(c.left.clone());
-        let b = BooleanExpression::var(c.right.clone());
-        let c = BooleanExpression::var(c.out.clone());
-        Invariant((a & !b).eq(c))
-    }
-}
-
-impl<C: Clone> From<&'_ Repeat<C>> for Invariant<C> {
-    fn from(_: &'_ Repeat<C>) -> Self {
-        unimplemented!()
-    }
-}
-impl<C: Clone> From<&'_ Delay<C>> for Invariant<C> {
-    fn from(c: &'_ Delay<C>) -> Self {
-        let ab = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
-        let a = BooleanExpression::var(c.base.clone());
-        let b = BooleanExpression::var(c.out.clone());
-        let d = c.delay as i64;
-        Invariant((ab.eq(d) & a.eq(b.clone())) | (ab.less(d) & !b))
-    }
-}
-impl<C: Clone> From<&'_ SampleOn<C>> for Invariant<C> {
-    fn from(_: &'_ SampleOn<C>) -> Self {
-        unimplemented!()
-    }
-}
-impl<C: Clone> From<&'_ Diff<C>> for Invariant<C> {
-    fn from(_: &'_ Diff<C>) -> Self {
-        unimplemented!()
-    }
-}
-
 impl<C: Ord + Clone + Debug> Invariant<C> {
     pub(crate) fn check<const N: usize>(&self, traces: BTreeMap<C, [u8; N]>) -> bool {
         let mut counters = vec![];
         let mut clocks = vec![];
-        self.0.leaves(&mut counters, &mut clocks);
+        self.0.visit(&mut counters, &mut clocks);
         for c in clocks.iter() {
             if !traces.contains_key(c) {
                 panic!("trace for clock {:?} is not supplied", c)
@@ -431,30 +305,31 @@ pub fn assume<C: Ord + Clone + Display + Debug>(
             state
         }
         BooleanExpression::BooleanBinary { kind, left, right } => match kind {
-            BooleanComparisonKind::And => {
+            BooleanComparisonKind::AND => {
                 if expected {
                     assume(left, true).intersection_complemented(assume(right, true))
                 } else {
                     assume(left, false).union_complemented(assume(right, false))
                 }
             }
-            BooleanComparisonKind::Or => {
+            BooleanComparisonKind::OR => {
                 if expected {
                     assume(left, true).union_complemented(assume(right, true))
                 } else {
                     assume(left, false).intersection_complemented(assume(right, false))
                 }
             }
-            BooleanComparisonKind::Xor => assume(left, true)
+            BooleanComparisonKind::XOR => assume(left, true)
                 .intersection_complemented(assume(right, false))
                 .union_complemented(
                     assume(left, false).intersection_complemented(assume(right, true)),
                 ),
-            BooleanComparisonKind::Eq => assume(left, true)
+            BooleanComparisonKind::EQ => assume(left, true)
                 .intersection_complemented(assume(right, true))
                 .union_complemented(
                     assume(left, false).intersection_complemented(assume(right, false)),
                 ),
+            BooleanComparisonKind::IMPLIES => unimplemented!(),
         },
         BooleanExpression::Not(e) => assume(e, !expected),
         BooleanExpression::Constant(_) => panic!("should not be present"),

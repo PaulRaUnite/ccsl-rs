@@ -6,7 +6,7 @@ use rand::prelude::*;
 
 use crate::generation::graph::{random_processing_network, TreeIterator};
 use crate::kernel::constraints::{
-    Causality, Constraint, Delay, Exclusion, Infinity, Intersection, Minus, Precedence, Repeat,
+    Causality, Constraint, Delay, Exclusion, Infinum, Intersection, Minus, Precedence, Repeat,
     Subclocking, Supremum, Union,
 };
 use petgraph::visit::IntoNodeReferences;
@@ -91,7 +91,7 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
             3 => Exclusion { clocks: all }.into(),
             4 => Union { out, args: others }.into(),
             5 => Intersection { out, args: others }.into(),
-            6 => Infinity { out, left, right }.into(),
+            6 => Infinum { out, left, right }.into(),
             7 => Supremum { out, left, right }.into(),
             8 => Minus {
                 out,
@@ -238,7 +238,7 @@ pub fn random_connected_specification(
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
-                Infinity { out, left, right }.into()
+                Infinum { out, left, right }.into()
             }
             7 => {
                 let (out, others) = gen_expr_clocks(&mut rng, &known_clocks, clock_size, true);

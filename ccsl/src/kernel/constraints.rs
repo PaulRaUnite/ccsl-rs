@@ -158,19 +158,19 @@ impl<C> Intersection<C> {
 }
 
 #[derive(Debug, Copy, Clone, Hash)]
-pub struct Infinity<C> {
+pub struct Infinum<C> {
     pub out: C,
     pub left: C,
     pub right: C,
 }
 
-impl<C> Infinity<C> {
-    pub(crate) fn map<B, F>(&self, mut f: F) -> Infinity<B>
+impl<C> Infinum<C> {
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Infinum<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
     {
-        Infinity {
+        Infinum {
             out: f(&self.out),
             left: f(&self.left),
             right: f(&self.right),
@@ -262,19 +262,19 @@ impl<C> SampleOn<C> {
     }
 }
 #[derive(Debug, Copy, Clone, Hash)]
-pub struct Diff<C> {
+pub struct Slice<C> {
     pub out: C,
     pub base: C,
     pub from: usize,
-    pub up_to: usize,
+    pub up_to: Option<usize>,
 }
 
-impl<C> Diff<C> {
-    pub(crate) fn map<B, F>(&self, mut f: F) -> Diff<B>
+impl<C> Slice<C> {
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Slice<B>
     where
         F: FnMut(&C) -> B,
     {
-        Diff {
+        Slice {
             out: f(&self.out),
             base: f(&self.base),
             from: self.from,
@@ -310,7 +310,7 @@ pub enum Constraint<C> {
     Precedence(Precedence<C>),
     SubClock(Subclocking<C>),
     Exclusion(Exclusion<C>),
-    Infinity(Infinity<C>),
+    Infinity(Infinum<C>),
     Supremum(Supremum<C>),
     Union(Union<C>),
     Intersection(Intersection<C>),
@@ -318,7 +318,7 @@ pub enum Constraint<C> {
     Repeat(Repeat<C>),
     Delay(Delay<C>),
     SampleOn(SampleOn<C>),
-    Diff(Diff<C>),
+    Diff(Slice<C>),
 }
 
 impl<C> From<&'_ Constraint<C>> for STSBuilder<C>
@@ -527,11 +527,11 @@ where
     }
 }
 
-impl<C> From<&'_ Infinity<C>> for STSBuilder<C>
+impl<C> From<&'_ Infinum<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + Display,
 {
-    fn from(c: &Infinity<C>) -> Self {
+    fn from(c: &Infinum<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let minus = State::new(0);
         let zero = State::new(1);
@@ -591,17 +591,17 @@ where
         system
     }
 }
-impl<C> From<&'_ Diff<C>> for STSBuilder<C>
+impl<C> From<&'_ Slice<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + Display,
 {
-    fn from(c: &Diff<C>) -> Self {
+    fn from(c: &Slice<C>) -> Self {
         let mut sts: STSBuilder<C> = (&Repeat {
             out: c.out.clone(),
             every: 1,
             base: c.base.clone(),
             from: Some(c.from),
-            up_to: Some(c.up_to),
+            up_to: c.up_to,
         })
             .into();
         sts.set_name(c.to_string());
@@ -758,7 +758,7 @@ impl<C: Display> Display for Delay<C> {
     }
 }
 
-impl<C: Display> Display for Infinity<C> {
+impl<C: Display> Display for Infinum<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = inf({},{})", self.out, self.left, self.right)
     }
@@ -773,12 +773,17 @@ impl<C: Display> Display for SampleOn<C> {
         write!(f, "{} = {} sampledOn {}", self.out, self.trigger, self.base)
     }
 }
-impl<C: Display> Display for Diff<C> {
+impl<C: Display> Display for Slice<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{} = {} [{}, {}]",
-            self.out, self.base, self.from, self.up_to
+            self.out,
+            self.base,
+            self.from,
+            self.up_to
+                .as_ref()
+                .map_or("∞".to_owned(), ToString::to_string)
         )
     }
 }
@@ -883,7 +888,7 @@ impl<C> Constraint<C> {
             + From<Precedence<C>>
             + From<Subclocking<C>>
             + From<Exclusion<C>>
-            + From<Infinity<C>>
+            + From<Infinum<C>>
             + From<Supremum<C>>
             + From<Union<C>>
             + From<Intersection<C>>
@@ -891,7 +896,7 @@ impl<C> Constraint<C> {
             + From<Repeat<C>>
             + From<Delay<C>>
             + From<SampleOn<C>>
-            + From<Diff<C>>,
+            + From<Slice<C>>,
     {
         match self {
             Constraint::Coincidence(c) => c.into(),
@@ -917,7 +922,7 @@ impl<C> Constraint<C> {
             + From<&'a Precedence<C>>
             + From<&'a Subclocking<C>>
             + From<&'a Exclusion<C>>
-            + From<&'a Infinity<C>>
+            + From<&'a Infinum<C>>
             + From<&'a Supremum<C>>
             + From<&'a Union<C>>
             + From<&'a Intersection<C>>
@@ -925,7 +930,7 @@ impl<C> Constraint<C> {
             + From<&'a Repeat<C>>
             + From<&'a Delay<C>>
             + From<&'a SampleOn<C>>
-            + From<&'a Diff<C>>,
+            + From<&'a Slice<C>>,
     {
         match self {
             Constraint::Coincidence(c) => c.into(),

@@ -4,6 +4,7 @@ members = [
     "tools",
     "absint",
     "experiments",
+    "nbac",
 ]
 default-members=[
     "tools",

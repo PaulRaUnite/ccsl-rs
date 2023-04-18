@@ -1,31 +1,34 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::iter::once;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Mul, Not, Sub};
-use std::sync::Arc;
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Rem, Sub};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IntegerArithmeticsKind {
     Add,
     Sub,
     Mul,
-    //Div,
-    //Mod,
+    Div,
+    Rem,
 }
 
-// TODO: never use the whole expressiveness of integer arithmetics anywhere, should remove
-#[derive(Debug, Clone)]
-pub enum IntegerExpression<V, C = i64> {
-    Variable(V),
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum IntegerExpression<VI, VB, C = i64, B = bool> {
+    Variable(VI),
     Constant(C),
     IntegerBinary {
         kind: IntegerArithmeticsKind,
-        left: Arc<IntegerExpression<V, C>>,
-        right: Arc<IntegerExpression<V, C>>,
+        left: Box<IntegerExpression<VI, VB, C, B>>,
+        right: Box<IntegerExpression<VI, VB, C, B>>,
+    },
+    IfThenElse {
+        cond: BooleanExpression<VI, VB, C, B>,
+        then_clause: Box<IntegerExpression<VI, VB, C, B>>,
+        else_clause: Box<IntegerExpression<VI, VB, C, B>>,
     },
 }
 
-impl<V: Display, C: Display> Display for IntegerExpression<V, C> {
+impl<VI: Display, VB: Display, C: Display, B: Display> Display for IntegerExpression<VI, VB, C, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             IntegerExpression::Variable(v) => write!(f, "{}", v),
@@ -35,80 +38,137 @@ impl<V: Display, C: Display> Display for IntegerExpression<V, C> {
                     IntegerArithmeticsKind::Add => "+",
                     IntegerArithmeticsKind::Sub => "-",
                     IntegerArithmeticsKind::Mul => "*",
+                    IntegerArithmeticsKind::Div => "/",
+                    IntegerArithmeticsKind::Rem => "%",
                 };
                 write!(f, "{} {} {}", left, sign, right)
+            }
+            IntegerExpression::IfThenElse {
+                cond,
+                then_clause,
+                else_clause,
+            } => {
+                write!(f, "if {} then {} else {}", cond, then_clause, else_clause)
             }
         }
     }
 }
 
-impl<V, C> Add for IntegerExpression<V, C> {
+impl<VI, VB, C, B> Add for IntegerExpression<VI, VB, C, B> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Add,
-            left: Arc::new(self),
-            right: Arc::new(rhs),
+            left: Box::new(self),
+            right: Box::new(rhs),
         }
     }
 }
 
-impl<V, C> Sub for IntegerExpression<V, C> {
+impl<VI, VB, C, B> Sub for IntegerExpression<VI, VB, C, B> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Sub,
-            left: Arc::new(self),
-            right: Arc::new(rhs),
+            left: Box::new(self),
+            right: Box::new(rhs),
         }
     }
 }
 
-impl<V, C> Mul for IntegerExpression<V, C> {
+impl<VI, VB, C, B> Mul for IntegerExpression<VI, VB, C, B> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
         IntegerExpression::IntegerBinary {
             kind: IntegerArithmeticsKind::Mul,
-            left: Arc::new(self),
-            right: Arc::new(rhs),
+            left: Box::new(self),
+            right: Box::new(rhs),
         }
     }
 }
 
-impl<V, C> From<C> for IntegerExpression<V, C> {
+impl<VI, VB, C, B> Div for IntegerExpression<VI, VB, C, B> {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        IntegerExpression::IntegerBinary {
+            kind: IntegerArithmeticsKind::Div,
+            left: Box::new(self),
+            right: Box::new(rhs),
+        }
+    }
+}
+impl<VI, VB, C, B> Rem for IntegerExpression<VI, VB, C, B> {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        IntegerExpression::IntegerBinary {
+            kind: IntegerArithmeticsKind::Rem,
+            left: Box::new(self),
+            right: Box::new(rhs),
+        }
+    }
+}
+
+impl<VI, VB, C, B> From<C> for IntegerExpression<VI, VB, C, B> {
     fn from(n: C) -> Self {
         IntegerExpression::Constant(n)
     }
 }
 
-impl<'a, VI: 'a, C> IntegerExpression<VI, C>
+impl<VI, VB, C, B> IntegerExpression<VI, VB, C, B>
 where
-    C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
+    C: Clone
+        + Ord
+        + Add<Output = C>
+        + Sub<Output = C>
+        + Mul<Output = C>
+        + Div<Output = C>
+        + Rem<Output = C>
+        + PartialEq,
+    B: Clone
+        + BitAnd<Output = B>
+        + BitOr<Output = B>
+        + From<bool>
+        + Into<bool>
+        + BitXor<Output = B>
+        + PartialEq
+        + Not<Output = B>,
 {
-    fn eval(&'a self, int_state: &impl Fn(&VI) -> C) -> C {
+    fn eval(&self, int_state: &impl Fn(&VI) -> C, bool_state: &impl Fn(&VB) -> B) -> C {
         match &self {
             IntegerExpression::Variable(v) => int_state(v),
             IntegerExpression::Constant(c) => c.clone(),
             IntegerExpression::IntegerBinary { kind, left, right } => {
-                let left = left.eval(int_state);
-                let right = right.eval(int_state);
+                let left = left.eval(int_state, bool_state);
+                let right = right.eval(int_state, bool_state);
                 match &kind {
                     IntegerArithmeticsKind::Add => left + right,
                     IntegerArithmeticsKind::Sub => left - right,
                     IntegerArithmeticsKind::Mul => left * right,
+                    IntegerArithmeticsKind::Div => left / right,
+                    IntegerArithmeticsKind::Rem => left % right,
+                }
+            }
+            IntegerExpression::IfThenElse {
+                cond,
+                then_clause,
+                else_clause,
+            } => {
+                if cond.eval(int_state, bool_state).into() {
+                    then_clause.eval(int_state, bool_state)
+                } else {
+                    else_clause.eval(int_state, bool_state)
                 }
             }
         }
     }
 }
-impl<V, C> IntegerExpression<V, C>
-where
-    C: Clone,
-{
-    pub fn var(v: impl Into<V>) -> Self {
+impl<VI, VB, C, B> IntegerExpression<VI, VB, C, B> {
+    pub fn var(v: impl Into<VI>) -> Self {
         IntegerExpression::Variable(v.into())
     }
 
@@ -116,11 +176,11 @@ where
         IntegerExpression::Constant(c.into())
     }
 
-    fn cmp<VB, B>(
+    fn cmp(
         kind: IntegerComparisonKind,
-        left: IntegerExpression<V, C>,
-        right: IntegerExpression<V, C>,
-    ) -> BooleanExpression<V, VB, C, B> {
+        left: IntegerExpression<VI, VB, C, B>,
+        right: IntegerExpression<VI, VB, C, B>,
+    ) -> BooleanExpression<VI, VB, C, B> {
         BooleanExpression::IntegerBinary {
             kind,
             left: left.into(),
@@ -129,25 +189,25 @@ where
     }
 }
 
-impl<VI: Clone, C: Clone> IntegerExpression<VI, C> {
-    pub fn eq<VB, B>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
+impl<VI: Clone, VB: Clone, C: Clone, B: Clone> IntegerExpression<VI, VB, C, B> {
+    pub fn eq(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
         IntegerExpression::cmp(IntegerComparisonKind::Equal, self.clone(), rhs.into())
     }
-    pub fn less<VB, B>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
+    pub fn less(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
         IntegerExpression::cmp(IntegerComparisonKind::Less, self.clone(), rhs.into())
     }
-    pub fn less_eq<VB, B>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
+    pub fn less_eq(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
         IntegerExpression::cmp(IntegerComparisonKind::LessEq, self.clone(), rhs.into())
     }
-    pub fn more<VB, B>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
+    pub fn more(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
         IntegerExpression::cmp(IntegerComparisonKind::More, self.clone(), rhs.into())
     }
-    pub fn more_eq<VB, B>(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
+    pub fn more_eq(&self, rhs: impl Into<Self>) -> BooleanExpression<VI, VB, C, B> {
         IntegerExpression::cmp(IntegerComparisonKind::MoreEq, self.clone(), rhs.into())
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IntegerComparisonKind {
     Equal,
     Less,
@@ -168,20 +228,21 @@ impl IntegerComparisonKind {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum BooleanComparisonKind {
-    And,
-    Or,
-    Xor,
-    Eq,
+    AND,
+    OR,
+    XOR,
+    EQ,
+    IMPLIES,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BooleanExpression<VI, VB, C = i64, B = bool> {
     IntegerBinary {
         kind: IntegerComparisonKind,
-        left: Box<IntegerExpression<VI, C>>,
-        right: Box<IntegerExpression<VI, C>>,
+        left: Box<IntegerExpression<VI, VB, C, B>>,
+        right: Box<IntegerExpression<VI, VB, C, B>>,
     },
     BooleanBinary {
         kind: BooleanComparisonKind,
@@ -198,7 +259,7 @@ impl<VI: Display, VB: Display, C: Display, B: Display> Display for BooleanExpres
         match self {
             BooleanExpression::IntegerBinary { kind, left, right } => {
                 let sign = match kind {
-                    IntegerComparisonKind::Equal => "==",
+                    IntegerComparisonKind::Equal => "=",
                     IntegerComparisonKind::Less => "<",
                     IntegerComparisonKind::LessEq => "<=",
                     IntegerComparisonKind::More => ">",
@@ -208,10 +269,11 @@ impl<VI: Display, VB: Display, C: Display, B: Display> Display for BooleanExpres
             }
             BooleanExpression::BooleanBinary { kind, left, right } => {
                 let sign = match kind {
-                    BooleanComparisonKind::And => "&&",
-                    BooleanComparisonKind::Or => "||",
-                    BooleanComparisonKind::Xor => "^",
-                    BooleanComparisonKind::Eq => "==",
+                    BooleanComparisonKind::AND => "and",
+                    BooleanComparisonKind::OR => "or",
+                    BooleanComparisonKind::XOR => "xor",
+                    BooleanComparisonKind::EQ => "=",
+                    BooleanComparisonKind::IMPLIES => "=>",
                 };
                 write!(f, "{} {} {}", left, sign, right)
             }
@@ -224,14 +286,28 @@ impl<VI: Display, VB: Display, C: Display, B: Display> Display for BooleanExpres
 
 impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B>
 where
-    C: Clone + Ord + Add<Output = C> + Sub<Output = C> + Mul<Output = C>,
-    B: Clone + Into<bool>,
+    C: Clone
+        + Ord
+        + Add<Output = C>
+        + Sub<Output = C>
+        + Mul<Output = C>
+        + Div<Output = C>
+        + Rem<Output = C>
+        + PartialEq,
+    B: Clone
+        + BitAnd<Output = B>
+        + BitOr<Output = B>
+        + From<bool>
+        + Into<bool>
+        + BitXor<Output = B>
+        + PartialEq
+        + Not<Output = B>,
 {
-    pub fn eval(&self, int_state: &impl Fn(&VI) -> C, bool_state: &impl Fn(&VB) -> bool) -> bool {
+    pub fn eval(&self, int_state: &impl Fn(&VI) -> C, bool_state: &impl Fn(&VB) -> B) -> B {
         match &self {
             BooleanExpression::IntegerBinary { kind, left, right } => {
-                let left = left.eval(int_state);
-                let right = right.eval(int_state);
+                let left = left.eval(int_state, bool_state);
+                let right = right.eval(int_state, bool_state);
                 match &kind {
                     IntegerComparisonKind::Equal => left == right,
                     IntegerComparisonKind::Less => left < right,
@@ -239,19 +315,21 @@ where
                     IntegerComparisonKind::More => left > right,
                     IntegerComparisonKind::MoreEq => left >= right,
                 }
+                .into()
             }
             BooleanExpression::BooleanBinary { kind, left, right } => {
                 let left = left.eval(int_state, bool_state);
                 let right = right.eval(int_state, bool_state);
                 match &kind {
-                    BooleanComparisonKind::And => left && right,
-                    BooleanComparisonKind::Or => left || right,
-                    BooleanComparisonKind::Xor => left ^ right,
-                    BooleanComparisonKind::Eq => left == right,
+                    BooleanComparisonKind::AND => left & right,
+                    BooleanComparisonKind::OR => left | right,
+                    BooleanComparisonKind::XOR => left ^ right,
+                    BooleanComparisonKind::EQ => (left == right).into(),
+                    BooleanComparisonKind::IMPLIES => !left | right,
                 }
             }
             BooleanExpression::Not(e) => !e.eval(int_state, bool_state),
-            BooleanExpression::Constant(b) => b.clone().into(),
+            BooleanExpression::Constant(b) => b.clone(),
             BooleanExpression::Variable(v) => bool_state(v),
         }
     }
@@ -262,7 +340,7 @@ impl<VI, VB, C, B> BitOr for BooleanExpression<VI, VB, C, B> {
 
     fn bitor(self, rhs: Self) -> Self::Output {
         BooleanExpression::BooleanBinary {
-            kind: BooleanComparisonKind::Or,
+            kind: BooleanComparisonKind::OR,
             left: self.into(),
             right: rhs.into(),
         }
@@ -274,7 +352,7 @@ impl<VI, VB, C, B> BitAnd for BooleanExpression<VI, VB, C, B> {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         BooleanExpression::BooleanBinary {
-            kind: BooleanComparisonKind::And,
+            kind: BooleanComparisonKind::AND,
             left: self.into(),
             right: rhs.into(),
         }
@@ -286,7 +364,7 @@ impl<VI, VB, C, B> BitXor for BooleanExpression<VI, VB, C, B> {
 
     fn bitxor(self, rhs: Self) -> Self::Output {
         BooleanExpression::BooleanBinary {
-            kind: BooleanComparisonKind::Xor,
+            kind: BooleanComparisonKind::XOR,
             left: self.into(),
             right: rhs.into(),
         }
@@ -312,19 +390,16 @@ impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B> {
         self,
         other: BooleanExpression<VI, VB, C, B>,
     ) -> BooleanExpression<VI, VB, C, B> {
-        !self | other
-    }
-
-    pub fn strictly_implies(
-        self,
-        other: BooleanExpression<VI, VB, C, B>,
-    ) -> BooleanExpression<VI, VB, C, B> {
-        self & other
+        BooleanExpression::BooleanBinary {
+            kind: BooleanComparisonKind::IMPLIES,
+            left: Box::new(self),
+            right: Box::new(other),
+        }
     }
 
     pub fn eq(self, other: BooleanExpression<VI, VB, C, B>) -> BooleanExpression<VI, VB, C, B> {
         BooleanExpression::BooleanBinary {
-            kind: BooleanComparisonKind::Eq,
+            kind: BooleanComparisonKind::EQ,
             left: self.into(),
             right: other.into(),
         }
@@ -335,6 +410,27 @@ impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B> {
 
     pub fn var(v: impl Into<VB>) -> BooleanExpression<VI, VB, C, B> {
         BooleanExpression::Variable(v.into())
+    }
+}
+
+impl<VI: Clone, VB: Clone, C: Clone, B: Clone> BooleanExpression<VI, VB, C, B> {
+    pub fn if_then_else(
+        &self,
+        then_clause: impl Into<IntegerExpression<VI, VB, C, B>>,
+        else_clause: impl Into<IntegerExpression<VI, VB, C, B>>,
+    ) -> IntegerExpression<VI, VB, C, B> {
+        IntegerExpression::IfThenElse {
+            cond: self.clone(),
+            then_clause: Box::new(then_clause.into()),
+            else_clause: Box::new(else_clause.into()),
+        }
+    }
+    pub fn if_then_elseb(
+        &self,
+        then_clause: impl Into<BooleanExpression<VI, VB, C, B>>,
+        else_clause: impl Into<BooleanExpression<VI, VB, C, B>>,
+    ) -> BooleanExpression<VI, VB, C, B> {
+        (self.clone() & then_clause.into()) | (!self.clone() & else_clause.into())
     }
 }
 
@@ -370,20 +466,31 @@ impl<G, R> Switch<G, R> {
     }
 }
 
-impl<V, C> IntegerExpression<V, C>
+impl<VI, VB, C, B> IntegerExpression<VI, VB, C, B>
 where
-    V: Clone,
+    VI: Clone,
+    VB: Clone,
 {
-    pub fn leaves<S>(&self, variables: &mut S)
+    pub fn visit<SI, SB>(&self, int_var: &mut SI, bool_var: &mut SB)
     where
-        S: Extend<V>,
+        SI: Extend<VI>,
+        SB: Extend<VB>,
     {
         match self {
-            IntegerExpression::Variable(v) => variables.extend(once(v.clone())),
+            IntegerExpression::Variable(v) => int_var.extend(once(v.clone())),
             IntegerExpression::Constant(c) => {}
             IntegerExpression::IntegerBinary { left, right, .. } => {
-                left.leaves(variables);
-                right.leaves(variables);
+                left.visit(int_var, bool_var);
+                right.visit(int_var, bool_var);
+            }
+            IntegerExpression::IfThenElse {
+                cond,
+                then_clause,
+                else_clause,
+            } => {
+                cond.visit(int_var, bool_var);
+                then_clause.visit(int_var, bool_var);
+                else_clause.visit(int_var, bool_var);
             }
         }
     }
@@ -394,23 +501,103 @@ where
     VI: Clone,
     VB: Clone,
 {
-    pub fn leaves<SI, SB>(&self, int_var: &mut SI, bool_var: &mut SB)
+    pub fn visit<SI, SB>(&self, int_var: &mut SI, bool_var: &mut SB)
     where
         SI: Extend<VI>,
         SB: Extend<VB>,
     {
         match self {
             BooleanExpression::IntegerBinary { left, right, .. } => {
-                left.leaves(int_var);
-                right.leaves(int_var);
+                left.visit(int_var, bool_var);
+                right.visit(int_var, bool_var);
             }
             BooleanExpression::BooleanBinary { left, right, .. } => {
-                left.leaves(int_var, bool_var);
-                right.leaves(int_var, bool_var);
+                left.visit(int_var, bool_var);
+                right.visit(int_var, bool_var);
             }
-            BooleanExpression::Not(expr) => expr.leaves(int_var, bool_var),
+            BooleanExpression::Not(expr) => expr.visit(int_var, bool_var),
             BooleanExpression::Constant(c) => {}
             BooleanExpression::Variable(v) => bool_var.extend(once(v.clone())),
         }
+    }
+}
+
+impl<VI, VB, C, B> IntegerExpression<VI, VB, C, B> {
+    pub fn map<NVI, NVB, NC, NB>(
+        &self,
+        vi: &mut impl FnMut(&VI) -> NVI,
+        vb: &mut impl FnMut(&VB) -> NVB,
+        ci: &mut impl FnMut(&C) -> NC,
+        cb: &mut impl FnMut(&B) -> NB,
+    ) -> IntegerExpression<NVI, NVB, NC, NB> {
+        match self {
+            IntegerExpression::Variable(v) => IntegerExpression::Variable(vi(v)),
+            IntegerExpression::Constant(c) => IntegerExpression::Constant(ci(c)),
+            IntegerExpression::IntegerBinary { kind, left, right } => {
+                IntegerExpression::IntegerBinary {
+                    kind: *kind,
+                    left: Box::new(left.map(vi, vb, ci, cb)),
+                    right: Box::new(right.map(vi, vb, ci, cb)),
+                }
+            }
+            IntegerExpression::IfThenElse {
+                cond,
+                then_clause,
+                else_clause,
+            } => IntegerExpression::IfThenElse {
+                cond: cond.map(vi, vb, ci, cb),
+                then_clause: Box::new(then_clause.map(vi, vb, ci, cb)),
+                else_clause: Box::new(else_clause.map(vi, vb, ci, cb)),
+            },
+        }
+    }
+}
+impl<VI, VB, C, B> BooleanExpression<VI, VB, C, B> {
+    pub fn map<NVI, NVB, NC, NB>(
+        &self,
+        vi: &mut impl FnMut(&VI) -> NVI,
+        vb: &mut impl FnMut(&VB) -> NVB,
+        ci: &mut impl FnMut(&C) -> NC,
+        cb: &mut impl FnMut(&B) -> NB,
+    ) -> BooleanExpression<NVI, NVB, NC, NB> {
+        match self {
+            BooleanExpression::IntegerBinary { kind, left, right } => {
+                BooleanExpression::IntegerBinary {
+                    kind: *kind,
+                    left: Box::new(left.map(vi, vb, ci, cb)),
+                    right: Box::new(right.map(vi, vb, ci, cb)),
+                }
+            }
+            BooleanExpression::BooleanBinary { kind, left, right } => {
+                BooleanExpression::BooleanBinary {
+                    kind: *kind,
+                    left: Box::new(left.map(vi, vb, ci, cb)),
+                    right: Box::new(right.map(vi, vb, ci, cb)),
+                }
+            }
+            BooleanExpression::Not(e) => BooleanExpression::Not(Box::new(e.map(vi, vb, ci, cb))),
+            BooleanExpression::Constant(c) => BooleanExpression::Constant(cb(c)),
+            BooleanExpression::Variable(v) => BooleanExpression::Variable(vb(v)),
+        }
+    }
+}
+
+impl<VI, VB> BooleanExpression<VI, VB> {
+    pub fn map_var<NVI, NVB>(
+        &self,
+        vi: &mut impl FnMut(&VI) -> NVI,
+        vb: &mut impl FnMut(&VB) -> NVB,
+    ) -> BooleanExpression<NVI, NVB> {
+        self.map(vi, vb, &mut |c| *c, &mut |c| *c)
+    }
+}
+
+impl<VI, VB> IntegerExpression<VI, VB> {
+    pub fn map_var<NVI, NVB>(
+        &self,
+        vi: &mut impl FnMut(&VI) -> NVI,
+        vb: &mut impl FnMut(&VB) -> NVB,
+    ) -> IntegerExpression<NVI, NVB> {
+        self.map(vi, vb, &mut |c| *c, &mut |c| *c)
     }
 }

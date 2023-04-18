@@ -1,10 +1,10 @@
-use crate::analysis::{assume, interpret, ExecutionState, Invariant, StateWidening, Step};
 use crate::kernel::automata::Delta;
 use crate::kernel::constraints::{
     Causality, Delay, Exclusion, Intersection, Minus, Precedence, Subclocking, Union,
 };
 use crate::kernel::expressions::{BooleanExpression, IntegerExpression};
 use crate::lccsl::parser::{parse_to_string, ParseError};
+use crate::symbolic::{assume, interpret, ExecutionState, Invariant, StateWidening, Step};
 use absint::boolean::Bool;
 use absint::interval::{Interval, IntervalImmediateNarrowing, StandardWidening};
 use absint::{Lattice, SequenceLimiter};

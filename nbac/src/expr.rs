@@ -428,3 +428,91 @@ impl<V: Clone> BooleanExpression<V> {
         }
     }
 }
+
+type CCSLBoolExp<V> = ccsl::kernel::expressions::BooleanExpression<V, V>;
+type CCSLIntExp<V> = ccsl::kernel::expressions::IntegerExpression<V, V>;
+
+impl<V> From<CCSLBoolExp<V>> for BooleanExpression<V> {
+    fn from(value: CCSLBoolExp<V>) -> Self {
+        match value {
+            CCSLBoolExp::IntegerBinary { kind, left, right } => BooleanExpression::IntegerBinary {
+                kind: match kind {
+                    ccsl::kernel::expressions::IntegerComparisonKind::Equal => {
+                        IntegerComparisonKind::Equal
+                    }
+                    ccsl::kernel::expressions::IntegerComparisonKind::Less => {
+                        IntegerComparisonKind::Less
+                    }
+                    ccsl::kernel::expressions::IntegerComparisonKind::LessEq => {
+                        IntegerComparisonKind::LessEq
+                    }
+                    ccsl::kernel::expressions::IntegerComparisonKind::More => {
+                        IntegerComparisonKind::More
+                    }
+                    ccsl::kernel::expressions::IntegerComparisonKind::MoreEq => {
+                        IntegerComparisonKind::MoreEq
+                    }
+                },
+                left: Box::new((*left).into()),
+                right: Box::new((*right).into()),
+            },
+            CCSLBoolExp::BooleanBinary { kind, left, right } => BooleanExpression::BooleanBinary {
+                kind: match kind {
+                    ccsl::kernel::expressions::BooleanComparisonKind::AND => {
+                        BooleanComparisonKind::And
+                    }
+                    ccsl::kernel::expressions::BooleanComparisonKind::OR => {
+                        BooleanComparisonKind::Or
+                    }
+                    ccsl::kernel::expressions::BooleanComparisonKind::XOR => {
+                        BooleanComparisonKind::Xor
+                    }
+                    ccsl::kernel::expressions::BooleanComparisonKind::EQ => {
+                        BooleanComparisonKind::Eq
+                    }
+                    ccsl::kernel::expressions::BooleanComparisonKind::IMPLIES => {
+                        BooleanComparisonKind::Imply
+                    }
+                },
+                left: Box::new((*left).into()),
+                right: Box::new((*right).into()),
+            },
+            CCSLBoolExp::Not(expr) => BooleanExpression::Not(Box::new((*expr).into())),
+            CCSLBoolExp::Constant(c) => BooleanExpression::Constant(c),
+            CCSLBoolExp::Variable(v) => BooleanExpression::Variable(v),
+        }
+    }
+}
+impl<V> From<CCSLIntExp<V>> for IntegerExpression<V> {
+    fn from(value: CCSLIntExp<V>) -> Self {
+        match value {
+            CCSLIntExp::Variable(v) => IntegerExpression::Variable(v),
+            CCSLIntExp::Constant(c) => IntegerExpression::Constant(c),
+            CCSLIntExp::IntegerBinary { kind, left, right } => IntegerExpression::IntegerBinary {
+                kind: match kind {
+                    ccsl::kernel::expressions::IntegerArithmeticsKind::Add => {
+                        IntegerArithmeticsKind::Add
+                    }
+                    ccsl::kernel::expressions::IntegerArithmeticsKind::Sub => {
+                        IntegerArithmeticsKind::Sub
+                    }
+                    ccsl::kernel::expressions::IntegerArithmeticsKind::Mul => {
+                        IntegerArithmeticsKind::Mul
+                    }
+                    _ => panic!(),
+                },
+                left: Box::new((*left).into()),
+                right: Box::new((*right).into()),
+            },
+            CCSLIntExp::IfThenElse {
+                cond,
+                then_clause,
+                else_clause,
+            } => IntegerExpression::IfThenElse {
+                cond: cond.into(),
+                then_clause: Box::new((*then_clause).into()),
+                else_clause: Box::new((*else_clause).into()),
+            },
+        }
+    }
+}

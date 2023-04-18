@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::ops::RangeFrom;
 
+// origin LcDsl.xtext from lightccsl-feature.zip/plugins/lcdsl.jar
 #[derive(Parser)]
 #[grammar = "ccsl.pest"]
 struct LightCCSLParser;
@@ -164,7 +165,7 @@ fn parse_repeat(input: Pair<Rule>) -> Constraint<ID> {
             Rule::id => clocks.push(field.as_str().to_string().into()),
             Rule::int => every = field.as_str().parse::<usize>().unwrap_or(1),
             Rule::from => from = Some(field.into_inner().as_str().parse::<usize>().unwrap()),
-            Rule::up_to => up_to = Some(field.into_inner().as_str().parse::<usize>().unwrap()),
+            Rule::up_to => up_to = parse_infint(field),
             _ => unreachable!(),
         }
     }
@@ -191,7 +192,7 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
             Rule::causal_params => {
                 let mut par = field.into_inner();
                 let init = par.next().unwrap().as_str().parse::<usize>().unwrap();
-                let max = par.next().unwrap().as_str().parse::<usize>().unwrap();
+                let max = parse_infint(par.next().unwrap());
                 params.insert(clocks.len(), (init, max));
             }
             _ => unreachable!(),
@@ -202,7 +203,7 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     for (i, (clock, causality)) in clocks.into_iter().zip(kinds).enumerate() {
         let (init, max) = params
             .get(&i)
-            .map_or((None, None), |(init, max)| (Some(*init), Some(*max)));
+            .map_or((None, None), |(init, max)| (Some(*init), *max));
         constraints.push(if causality {
             Causality {
                 left: first,
@@ -382,7 +383,7 @@ fn parse_prefix_expression(
             .reduce(|left, right| {
                 let out: ID = gen.borrow_mut().next().unwrap().into();
                 container.push(
-                    Infinity {
+                    Infinum {
                         out: out.clone(),
                         left,
                         right,
@@ -423,17 +424,24 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
                 .into(),
         }
         .into(),
-        Rule::diff => {
+        Rule::slice => {
             let mut inner = field.into_inner();
-            Diff {
+            Slice {
                 out,
                 base: first,
                 from: inner.next().unwrap().as_str().parse().unwrap(),
-                up_to: inner.next().unwrap().as_str().parse().unwrap(),
+                up_to: parse_infint(inner.next().unwrap()),
             }
             .into()
         }
         _ => unreachable!(),
+    }
+}
+
+fn parse_infint(input: Pair<Rule>) -> Option<usize> {
+    match input.as_str() {
+        "Infinity" | "∞" => None,
+        x => Some(x.parse::<usize>().unwrap()),
     }
 }
 

@@ -5,15 +5,15 @@ constraint = _{ repeat | causal_chain | subclock_chain | exclusion_chain | let_e
 
 causal_chain = {"Precedence" ~ id ~ (causality_kind ~ causal_params? ~ id)+ }
 causality_kind = {"<=" | "<"}
-causal_params = {"(" ~ "init:" ~ int ~ "max:" ~ int ~ ")"}
+causal_params = {"(" ~ "init:" ~ int ~ "max:" ~ infint ~ ")"}
 
 repeat = { "repeat" ~ id ~ "every" ~ int? ~ id ~ from? ~ up_to? }
 from = {"from" ~ int}
-up_to = {"upTo" ~ int}
-periodic_def = { id ~ "=" ~ id ~ (delay | sampleOn | diff) }
+up_to = {"upTo" ~ infint}
+periodic_def = { id ~ "=" ~ id ~ (delay | sampleOn | slice) }
 delay = {"$" ~ int ~ ("on" ~id)?}
 sampleOn = {"sampledOn" ~ id}
-diff = {"[" ~ int ~ "," ~ int ~ "]"}
+slice = {"[" ~ int ~ "," ~ infint ~ "]"}
 
 subclock_chain = {"SubClocking" ~ id ~ ("<-" ~ id)*}
 
@@ -31,6 +31,8 @@ minus = { "-" | "minus" }
 expression = {term ~ (operation ~ term)* }
 term = _{ prefix_expr | "(" ~ expression ~ ")" | id  }
 
-int = @{ "-"? ~ ASCII_DIGIT+ }
+infint = {int | infinity}
+infinity = @{"Infinity" | "∞"}
+int = @{ ASCII_DIGIT+ }
 id = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "-" | "_")* }
 WHITESPACE = _{ " " | NEWLINE}

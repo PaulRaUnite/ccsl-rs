@@ -24,9 +24,6 @@ anyhow = "1"
 structopt = "0.3"
 absint={path="../absint"}
 
-[dependencies.nbac_format]
-git="ssh://git@github.com/PaulRaUnite/nbac_format.git"
-
 [dependencies.derive_more]
 version = "0.99"
 default-features = false

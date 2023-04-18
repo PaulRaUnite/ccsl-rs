@@ -7,15 +7,13 @@ pub mod generation;
 pub mod kernel;
 pub mod lccsl;
 
-pub mod sort {}
-pub mod complexity {}
-
 // TODO: rename the module and functions in it
 pub mod algo;
 
 pub mod visualisation;
 
-pub mod analysis;
+pub mod conflict_graph;
 pub mod optimization;
+pub mod symbolic;
 
 pub mod dot;
