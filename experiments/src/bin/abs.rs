@@ -5,7 +5,7 @@ use ccsl::symbolic::{assume, interpret, Invariant, StateWidening};
 fn main() {
     let inv: Invariant<usize> = (&Delay {
         out: 0,
-        base: 1,
+        trigger: 1,
         delay: 1,
         on: None,
     })
@@ -30,7 +30,7 @@ fn main() {
         .into(),
         Delay {
             out: 2,
-            base: 0,
+            trigger: 0,
             delay: 1,
             on: None,
         }

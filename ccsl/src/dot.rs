@@ -149,7 +149,7 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
                     );
                 }
             }
-            Constraint::Infinity(inf) => {
+            Constraint::Infimum(inf) => {
                 let infinum_node = g.add_node(Node::HyperNode {
                     id: format!(
                         "inf_{}_{}_{}",
@@ -300,7 +300,7 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
                         id: format!(
                             "delay_{}_{}_{}_{}",
                             delay.out.index(),
-                            delay.base.index(),
+                            delay.trigger.index(),
                             delay.delay,
                             on.index(),
                         ),
@@ -315,7 +315,7 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
                             ..Edge::syncronous()
                         },
                     );
-                    g.add_edge(delay.base, delay_node, Edge::asyncronous());
+                    g.add_edge(delay.trigger, delay_node, Edge::asyncronous());
                     g.add_edge(
                         on,
                         delay_node,
@@ -327,7 +327,7 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
                 } else {
                     g.add_edge(
                         delay.out,
-                        delay.base,
+                        delay.trigger,
                         Edge {
                             text: Some(Cow::Owned(node_label)),
                             end_shape: solid_ball_arrow(),
@@ -380,7 +380,7 @@ fn constraint_to_dot_label<C: Display>(c: &Constraint<C>) -> String {
         Constraint::Precedence(c) => format!("{} &#x227A; {}", c.left, c.right),
         Constraint::SubClock(c) => format!("{} &sube; {}", c.left, c.right),
         Constraint::Exclusion(c) => c.clocks.iter().join("#"),
-        Constraint::Infinity(c) => format!("{} = inf({}, {})", c.out, c.left, c.right),
+        Constraint::Infimum(c) => format!("{} = inf({}, {})", c.out, c.left, c.right),
         Constraint::Supremum(c) => format!("{} = sup({}, {})", c.out, c.left, c.right),
         Constraint::Union(c) => format!("{} = &cup;({})", c.out, c.args.iter().join(",")),
         Constraint::Intersection(c) => format!("{} = &cap;({})", c.out, c.args.iter().join(",")),
@@ -396,7 +396,7 @@ fn constraint_to_dot_label<C: Display>(c: &Constraint<C>) -> String {
         Constraint::Delay(c) => format!(
             "{} = {} delayed by {}{}",
             c.out,
-            c.base,
+            c.trigger,
             c.delay,
             c.on.as_ref().map_or("".to_owned(), |v| format!("on {}", v))
         ),

@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into(),
         Delay {
             out: 2u32,
-            base: 0u32,
+            trigger: 0u32,
             delay: 1,
             on: None,
         }

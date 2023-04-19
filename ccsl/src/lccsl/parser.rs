@@ -190,6 +190,7 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
             Rule::id => clocks.push(field.as_str().to_string().into()),
             Rule::causality_kind => kinds.push(field.as_str() == "<="),
             Rule::causal_params => {
+                // FIXME: should allow skipping init or max
                 let mut par = field.into_inner();
                 let init = par.next().unwrap().as_str().parse::<usize>().unwrap();
                 let max = parse_infint(par.next().unwrap());
@@ -383,7 +384,7 @@ fn parse_prefix_expression(
             .reduce(|left, right| {
                 let out: ID = gen.borrow_mut().next().unwrap().into();
                 container.push(
-                    Infinum {
+                    Infimum {
                         out: out.clone(),
                         left,
                         right,
@@ -406,7 +407,7 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
             let mut inner = field.into_inner();
             Delay {
                 out,
-                base: first,
+                trigger: first,
                 delay: inner.next().unwrap().as_str().parse::<usize>().unwrap(),
                 on: inner.next().map(|v| v.as_str().to_string().into()),
             }

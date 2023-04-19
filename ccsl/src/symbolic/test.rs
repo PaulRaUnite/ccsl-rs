@@ -263,7 +263,7 @@ fn test_minus() {
 fn test_delay() {
     let c: Invariant<usize> = (&Delay {
         out: 1,
-        base: 0,
+        trigger: 0,
         delay: 4,
         on: None,
     })

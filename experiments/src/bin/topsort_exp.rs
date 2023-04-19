@@ -319,7 +319,7 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
             //alt.lc
             Delay {
                 out: 1,
-                base: 0,
+                trigger: 0,
                 delay: 1,
                 on: None,
             }

@@ -1,6 +1,6 @@
 use crate::kernel::automata::Delta;
 use crate::kernel::constraints::{
-    Causality, Coincidence, Delay, Exclusion, Infinum, Intersection, Minus, Precedence, Repeat,
+    Causality, Coincidence, Delay, Exclusion, Infimum, Intersection, Minus, Precedence, Repeat,
     SampleOn, Slice, Specification, Subclocking, Supremum, Union,
 };
 use crate::kernel::expressions::{BooleanExpression, IntegerExpression};
@@ -78,26 +78,45 @@ impl<C: Clone + Eq + Hash> From<&'_ Coincidence<C>> for TransitionSystem<C> {
     }
 }
 
-// TODO: add max restriction
-/// (d(a,b) = 0 and b) => a
+/// ((d(a,b) = init and b) => a) and (d(a,b) = max => (a=>b))
 impl<C: Clone + Eq + Hash> From<&'_ Causality<C>> for TransitionSystem<C> {
     fn from(c: &'_ Causality<C>) -> Self {
-        let a_v = c.left.clone();
-        let a_e = BooleanExpression::var(a_v);
-        let b_v = c.right.clone();
-        let b_e = BooleanExpression::var(b_v);
-        let ab = Delta(c.left.clone(), c.right.clone());
-        (IntegerExpression::var(ab).eq(0) & b_e).implies(a_e).into()
+        let a_v = Variable::Clock(c.left.clone());
+        let a_e = BooleanExpression::var(a_v.clone());
+        let b_v = Variable::Clock(c.right.clone());
+        let b_e = BooleanExpression::var(b_v.clone());
+        let ab = Variable::Delta(Delta(c.left.clone(), c.right.clone()));
+
+        let ab_e = IntegerExpression::var(ab.clone());
+        TransitionSystem {
+            states: map! {ab.clone() => (Constant::Int(c.init.unwrap_or(0) as i64), default_counter_transition(&ab).1)},
+            inputs: set! {a_v, b_v},
+            restriction: (ab_e.eq(0) & b_e.clone()).implies(a_e.clone())
+                & c.max.map_or(BooleanExpression::Constant(true), |max| {
+                    ab_e.eq(max as i64).implies(a_e.implies(b_e))
+                }),
+        }
     }
 }
 
-/// d(a,b) = 0 => !b
+/// (d(a,b) = 0 => !b) and (d(a,b) = max => (a=>b))
 impl<C: Clone + Eq + Hash> From<&'_ Precedence<C>> for TransitionSystem<C> {
     fn from(c: &'_ Precedence<C>) -> Self {
-        let b_v = c.right.clone();
-        let b_e = BooleanExpression::var(b_v);
-        let ab = Delta(c.left.clone(), c.right.clone());
-        (IntegerExpression::var(ab).eq(0).implies(!b_e)).into()
+        let a_v = Variable::Clock(c.left.clone());
+        let a_e = BooleanExpression::var(a_v.clone());
+        let b_v = Variable::Clock(c.right.clone());
+        let b_e = BooleanExpression::var(b_v.clone());
+        let ab = Variable::Delta(Delta(c.left.clone(), c.right.clone()));
+
+        let ab_e = IntegerExpression::var(ab.clone());
+        TransitionSystem {
+            states: map! {ab.clone() => (Constant::Int(c.init.unwrap_or(0) as i64), default_counter_transition(&ab).1)},
+            inputs: set! {a_v, b_v},
+            restriction: (ab_e.eq(0).implies(!b_e.clone()))
+                & c.max.map_or(BooleanExpression::Constant(true), |max| {
+                    ab_e.eq(max as i64).implies(a_e.implies(b_e))
+                }),
+        }
     }
 }
 
@@ -127,20 +146,21 @@ impl<C: Clone + Eq + Hash> From<&'_ Exclusion<C>> for TransitionSystem<C> {
     }
 }
 
-/// (d(a,b) >= 0 => (a = i)) and (d(a,b) <= 0 => (b=i))
-impl<C: Clone + Eq + Hash> From<&'_ Infinum<C>> for TransitionSystem<C> {
-    fn from(c: &'_ Infinum<C>) -> Self {
+/// (d(a,b) >= 0 and a) or (d(a,b) <= 0 and b) = i
+impl<C: Clone + Eq + Hash> From<&'_ Infimum<C>> for TransitionSystem<C> {
+    fn from(c: &'_ Infimum<C>) -> Self {
         let a = BooleanExpression::var(c.left.clone());
         let b = BooleanExpression::var(c.right.clone());
         let i = BooleanExpression::var(c.out.clone());
         let ab = Delta(c.left.clone(), c.right.clone());
         let counter = IntegerExpression::var(ab);
-        (counter.clone().more_eq(0).implies(a.eq(i.clone())) & counter.less_eq(0).implies(b.eq(i)))
+        ((counter.more_eq(0) & a) | (counter.less_eq(0) & b))
+            .eq(i)
             .into()
     }
 }
 
-/// (d(a,b) >= 0 => (b = s)) and (d(a,b) <= 0 => (a=s))
+/// (d(a,b) >= 0 and b) or (d(a,b) <= 0 and a) = s
 impl<C: Clone + Eq + Hash> From<&'_ Supremum<C>> for TransitionSystem<C> {
     fn from(c: &'_ Supremum<C>) -> Self {
         let a = BooleanExpression::var(c.left.clone());
@@ -149,7 +169,8 @@ impl<C: Clone + Eq + Hash> From<&'_ Supremum<C>> for TransitionSystem<C> {
         let ab = Delta(c.left.clone(), c.right.clone());
         let counter = IntegerExpression::var(ab);
 
-        (counter.clone().more_eq(0).implies(b.eq(s.clone())) & counter.less_eq(0).implies(a.eq(s)))
+        ((counter.more_eq(0) & b) | (counter.less_eq(0) & a))
+            .eq(s)
             .into()
     }
 }
@@ -193,6 +214,8 @@ impl<C: Clone + Eq + Hash> From<&'_ Minus<C>> for TransitionSystem<C> {
     }
 }
 
+/// ((counter = period) => (base = out)) and ((counter < period) => not out)
+/// counter = if counter = period then 0 else if base then counter + 1 else counter
 impl<C: Clone + Eq + Hash> From<&'_ Repeat<C>> for TransitionSystem<C> {
     fn from(c: &'_ Repeat<C>) -> Self {
         if c.from.is_some() || c.up_to.is_some() {
@@ -206,27 +229,55 @@ impl<C: Clone + Eq + Hash> From<&'_ Repeat<C>> for TransitionSystem<C> {
         let counter = IntegerExpression::var(counter_v.clone());
 
         TransitionSystem {
-            states: map! {counter_v => (0.into(), counter.clone().eq(c.every as i64).if_then_else(0,base_e.if_then_else(counter.clone()+1.into(), counter.clone())).into())},
+            states: map! {counter_v => (0.into(), counter.eq(c.every as i64).if_then_else(0,base_e.if_then_else(counter.clone()+1.into(), counter.clone())).into())},
             inputs: set! {base_v,out_v},
             restriction: counter.eq(c.every as i64).implies(base_e.eq(out_e.clone()))
-                & counter.less_eq(c.every as i64).implies(!out_e),
+                & counter.less(c.every as i64).implies(!out_e),
         }
     }
 }
 
+/// (d(a,b) = delay and a=b) or (d(a,b) < d and not b)
 impl<C: Clone + Eq + Hash> From<&'_ Delay<C>> for TransitionSystem<C> {
     fn from(c: &'_ Delay<C>) -> Self {
-        let ab = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
-        let a = BooleanExpression::var(c.base.clone());
-        let b = BooleanExpression::var(c.out.clone());
-        let d = c.delay as i64;
-        ((ab.eq(d) & a.eq(b.clone())) | (ab.less(d) & !b)).into()
+        let base_v = c.on.as_ref().unwrap_or(&c.trigger).clone();
+        let base = BooleanExpression::var(Variable::Clock(base_v.clone()));
+        let trigger = BooleanExpression::var(Variable::Clock(c.trigger.clone()));
+        let counter_v = Variable::Generic("g_d".to_owned()); // FIXME: internally declared variables can conflict with inputs
+        let counter = IntegerExpression::var(counter_v.clone());
+        let out = BooleanExpression::var(Variable::Clock(c.out.clone()));
+        let delay = c.delay as i64;
+        let buffer_v = Variable::Generic("s_buf".to_owned());
+        let buffer = BooleanExpression::var(buffer_v.clone());
+        let sample_out = (buffer.clone() | trigger.clone()) & base.clone();
+
+        TransitionSystem {
+            states: map! {
+                        buffer_v => (Constant::Bool(false), (((buffer.clone() | trigger.clone())&!base.clone()) | (buffer&trigger&base)).into()),
+                        counter_v => (Constant::Int(0),(counter.clone() + sample_out.if_then_else(1, 0) - out.if_then_else(1, 0)).into(),
+            ),
+                    },
+            inputs: [&c.trigger, &c.out]
+                .into_iter()
+                .chain(c.on.as_ref())
+                .cloned()
+                .map(Variable::Clock)
+                .collect(),
+            restriction: counter.eq(delay).implies(sample_out.eq(out.clone()))
+                & counter.less(delay).implies(!out),
+        }
     }
 }
 
 impl<C: Clone + Eq + Hash> From<&'_ SampleOn<C>> for TransitionSystem<C> {
-    fn from(_: &'_ SampleOn<C>) -> Self {
-        unimplemented!()
+    fn from(c: &'_ SampleOn<C>) -> Self {
+        (&Delay {
+            out: c.out.clone(),
+            trigger: c.trigger.clone(),
+            delay: 0,
+            on: Some(c.base.clone()),
+        })
+            .into()
     }
 }
 
@@ -250,19 +301,10 @@ impl<C: Clone + Eq + Hash> From<BooleanExpression<Delta<C>, C>> for TransitionSy
                 .collect(),
             states: ints
                 .iter()
-                .map(|c| {
-                    (
-                        Variable::Delta(c.clone()),
-                        (
-                            Constant::Int(0),
-                            (IntegerExpression::var(Variable::Delta(c.clone()))
-                                + BooleanExpression::var(Variable::Clock(c.0.clone()))
-                                    .if_then_else(1, 0)
-                                - BooleanExpression::var(Variable::Clock(c.1.clone()))
-                                    .if_then_else(1, 0))
-                            .into(),
-                        ),
-                    )
+                .map(|delta_counter| {
+                    let variable = Variable::Delta(delta_counter.clone());
+                    let transition = default_counter_transition(&variable);
+                    (variable, transition)
                 })
                 .collect(),
             restriction: value.map(
@@ -288,11 +330,13 @@ impl<C: Clone + Eq + Hash + Display> FromIterator<TransitionSystem<C>> for Trans
                         .states
                         .iter()
                         .filter(|(var, state)| {
-                            if let Some(old) = acc.states.get(var) {
+                            let s = if let Some(old) = acc.states.get(var) {
                                 old != *state
                             } else {
                                 false
-                            }
+                            };
+                            let i = acc.inputs.contains(var);
+                            s || i
                         })
                         .collect_vec();
                     let remapping: HashMap<&Variable<C>, Variable<C>> = conflict_variables
@@ -325,4 +369,18 @@ impl<C: Clone + Eq + Hash + Display> FromIterator<TransitionSystem<C>> for Trans
             .unwrap()
             .1
     }
+}
+
+fn default_counter_transition<C: Clone>(v: &Variable<C>) -> (Constant, Expression<C>) {
+    let d = match v {
+        Variable::Delta(d) => d,
+        _ => panic!("only allowed for delta counters"),
+    };
+    (
+        Constant::Int(0),
+        (IntegerExpression::var(Variable::Delta(d.clone()))
+            + BooleanExpression::var(Variable::Clock(d.0.clone())).if_then_else(1, 0)
+            - BooleanExpression::var(Variable::Clock(d.1.clone())).if_then_else(1, 0))
+        .into(),
+    )
 }

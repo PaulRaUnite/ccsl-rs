@@ -6,7 +6,7 @@ use rand::prelude::*;
 
 use crate::generation::graph::{random_processing_network, TreeIterator};
 use crate::kernel::constraints::{
-    Causality, Constraint, Delay, Exclusion, Infinum, Intersection, Minus, Precedence, Repeat,
+    Causality, Constraint, Delay, Exclusion, Infimum, Intersection, Minus, Precedence, Repeat,
     Subclocking, Supremum, Union,
 };
 use petgraph::visit::IntoNodeReferences;
@@ -91,7 +91,7 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
             3 => Exclusion { clocks: all }.into(),
             4 => Union { out, args: others }.into(),
             5 => Intersection { out, args: others }.into(),
-            6 => Infinum { out, left, right }.into(),
+            6 => Infimum { out, left, right }.into(),
             7 => Supremum { out, left, right }.into(),
             8 => Minus {
                 out,
@@ -109,7 +109,7 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
             .into(),
             10 => Delay {
                 out,
-                base: left,
+                trigger: left,
                 delay: rng.gen_range(0..clock_size),
                 on: None,
             }
@@ -238,7 +238,7 @@ pub fn random_connected_specification(
                 known_clocks.insert(out);
                 known_clocks.extend(others.iter().copied());
                 let (left, right) = others.into_iter().collect_tuple().unwrap();
-                Infinum { out, left, right }.into()
+                Infimum { out, left, right }.into()
             }
             7 => {
                 let (out, others) = gen_expr_clocks(&mut rng, &known_clocks, clock_size, true);
@@ -273,7 +273,7 @@ pub fn random_connected_specification(
                 known_clocks.insert(right);
                 Delay {
                     out: left,
-                    base: right,
+                    trigger: right,
                     delay: rng.gen_range(0..clock_size),
                     on: None,
                 }
@@ -302,7 +302,7 @@ pub fn cycle_with_tail_and_spike(
         spec.push(
             Delay {
                 out: tail + size,
-                base: tail,
+                trigger: tail,
                 delay: buffer,
                 on: None,
             }
@@ -441,7 +441,7 @@ pub fn point_backpressure<C: Clone>(
     [
         Delay {
             out: delayed_input.clone(),
-            base: input,
+            trigger: input,
             delay: buffer,
             on: None,
         }

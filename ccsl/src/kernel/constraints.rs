@@ -158,19 +158,19 @@ impl<C> Intersection<C> {
 }
 
 #[derive(Debug, Copy, Clone, Hash)]
-pub struct Infinum<C> {
+pub struct Infimum<C> {
     pub out: C,
     pub left: C,
     pub right: C,
 }
 
-impl<C> Infinum<C> {
-    pub(crate) fn map<B, F>(&self, mut f: F) -> Infinum<B>
+impl<C> Infimum<C> {
+    pub(crate) fn map<B, F>(&self, mut f: F) -> Infimum<B>
     where
         F: FnMut(&C) -> B,
         B: Ord,
     {
-        Infinum {
+        Infimum {
             out: f(&self.out),
             left: f(&self.left),
             right: f(&self.right),
@@ -224,7 +224,7 @@ impl<C> Repeat<C> {
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Delay<C> {
     pub out: C,
-    pub base: C,
+    pub trigger: C,
     pub delay: usize,
     pub on: Option<C>,
 }
@@ -236,7 +236,7 @@ impl<C> Delay<C> {
     {
         Delay {
             out: f(&self.out),
-            base: f(&self.base),
+            trigger: f(&self.trigger),
             delay: self.delay,
             on: self.on.as_ref().map(f),
         }
@@ -310,7 +310,7 @@ pub enum Constraint<C> {
     Precedence(Precedence<C>),
     SubClock(Subclocking<C>),
     Exclusion(Exclusion<C>),
-    Infinity(Infinum<C>),
+    Infimum(Infimum<C>),
     Supremum(Supremum<C>),
     Union(Union<C>),
     Intersection(Intersection<C>),
@@ -512,26 +512,26 @@ where
     C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Delay<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.base.clone(), c.out.clone()));
+        let var = IntegerExpression::var(Delta(c.trigger.clone(), c.out.clone()));
         let start = State::new(0).with_invariant(var.eq(0));
         let mut system = STSBuilder::new(&c, start.clone());
 
         let mut last = start.clone();
         for i in 1..=c.delay {
             let state = State::new(i).with_invariant(var.eq(i64::try_from(i).unwrap()));
-            tr!(system, &last => &state, {c.base,});
+            tr!(system, &last => &state, {c.trigger,});
             last = state;
         }
-        tr!(system, &last => &last, {c.out, c.base,});
+        tr!(system, &last => &last, {c.out, c.trigger,});
         system
     }
 }
 
-impl<C> From<&'_ Infinum<C>> for STSBuilder<C>
+impl<C> From<&'_ Infimum<C>> for STSBuilder<C>
 where
     C: Clone + Ord + Hash + Display,
 {
-    fn from(c: &Infinum<C>) -> Self {
+    fn from(c: &Infimum<C>) -> Self {
         let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
         let minus = State::new(0);
         let zero = State::new(1);
@@ -754,11 +754,11 @@ impl<C: Display> Display for Intersection<C> {
 
 impl<C: Display> Display for Delay<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} = {}${}", self.out, self.base, self.delay)
+        write!(f, "{} = {}${}", self.out, self.trigger, self.delay)
     }
 }
 
-impl<C: Display> Display for Infinum<C> {
+impl<C: Display> Display for Infimum<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = inf({},{})", self.out, self.left, self.right)
     }
@@ -805,7 +805,7 @@ impl<C: Display> Display for Constraint<C> {
             Constraint::Precedence(c) => write!(f, "{}", c),
             Constraint::SubClock(c) => write!(f, "{}", c),
             Constraint::Exclusion(c) => write!(f, "{}", c),
-            Constraint::Infinity(c) => write!(f, "{}", c),
+            Constraint::Infimum(c) => write!(f, "{}", c),
             Constraint::Supremum(c) => write!(f, "{}", c),
             Constraint::Union(c) => write!(f, "{}", c),
             Constraint::Intersection(c) => write!(f, "{}", c),
@@ -845,7 +845,7 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => c.map(f).into(),
             Constraint::SubClock(c) => c.map(f).into(),
             Constraint::Exclusion(c) => c.map(f).into(),
-            Constraint::Infinity(c) => c.map(f).into(),
+            Constraint::Infimum(c) => c.map(f).into(),
             Constraint::Supremum(c) => c.map(f).into(),
             Constraint::Union(c) => c.map(f).into(),
             Constraint::Intersection(c) => c.map(f).into(),
@@ -864,7 +864,7 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => vec![&c.left, &c.right],
             Constraint::SubClock(c) => vec![&c.left, &c.right],
             Constraint::Exclusion(c) => c.clocks.iter().collect_vec(),
-            Constraint::Infinity(c) => vec![&c.out, &c.left, &c.right],
+            Constraint::Infimum(c) => vec![&c.out, &c.left, &c.right],
             Constraint::Supremum(c) => vec![&c.out, &c.left, &c.right],
             Constraint::Union(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
             Constraint::Intersection(c) => c.args.iter().chain(once(&c.out)).collect_vec(),
@@ -873,7 +873,7 @@ impl<C> Constraint<C> {
             Constraint::Delay(c) => {
                 c.on.iter()
                     .chain(once(&c.out))
-                    .chain(once(&c.base))
+                    .chain(once(&c.trigger))
                     .collect_vec()
             }
             Constraint::SampleOn(c) => vec![&c.out, &c.trigger, &c.base],
@@ -888,7 +888,7 @@ impl<C> Constraint<C> {
             + From<Precedence<C>>
             + From<Subclocking<C>>
             + From<Exclusion<C>>
-            + From<Infinum<C>>
+            + From<Infimum<C>>
             + From<Supremum<C>>
             + From<Union<C>>
             + From<Intersection<C>>
@@ -904,7 +904,7 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => c.into(),
             Constraint::SubClock(c) => c.into(),
             Constraint::Exclusion(c) => c.into(),
-            Constraint::Infinity(c) => c.into(),
+            Constraint::Infimum(c) => c.into(),
             Constraint::Supremum(c) => c.into(),
             Constraint::Union(c) => c.into(),
             Constraint::Intersection(c) => c.into(),
@@ -922,7 +922,7 @@ impl<C> Constraint<C> {
             + From<&'a Precedence<C>>
             + From<&'a Subclocking<C>>
             + From<&'a Exclusion<C>>
-            + From<&'a Infinum<C>>
+            + From<&'a Infimum<C>>
             + From<&'a Supremum<C>>
             + From<&'a Union<C>>
             + From<&'a Intersection<C>>
@@ -938,7 +938,7 @@ impl<C> Constraint<C> {
             Constraint::Precedence(c) => c.into(),
             Constraint::SubClock(c) => c.into(),
             Constraint::Exclusion(c) => c.into(),
-            Constraint::Infinity(c) => c.into(),
+            Constraint::Infimum(c) => c.into(),
             Constraint::Supremum(c) => c.into(),
             Constraint::Union(c) => c.into(),
             Constraint::Intersection(c) => c.into(),

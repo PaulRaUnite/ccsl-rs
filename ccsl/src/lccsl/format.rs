@@ -32,11 +32,11 @@ where
 {
     match c {
         Constraint::Coincidence(c) => format!("Let {} be {}", c.left, c.right),
-        Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right),
+        Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right), // FIXME: init and max are not formatted
         Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
         Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
         Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
-        Constraint::Infinity(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
+        Constraint::Infimum(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
         Constraint::Supremum(c) => format!("Let {} be sup({}, {})", c.out, c.left, c.right),
         Constraint::Union(c) => format!("Let {} be {}", c.out, c.args.iter().join(" + ")),
         Constraint::Intersection(c) => {
@@ -51,7 +51,13 @@ where
             c.from.map_or("".to_owned(), |v| format!("from {}", v)),
             c.up_to.map_or("".to_owned(), |v| format!("upTo {}", v))
         ),
-        Constraint::Delay(c) => format!("{} = {} $ {}", c.out, c.base, c.delay),
+        Constraint::Delay(c) => format!(
+            "{} = {} $ {} {}",
+            c.out,
+            c.trigger,
+            c.delay,
+            c.on.as_ref().map_or("".to_owned(), |on| on.to_string())
+        ),
         Constraint::SampleOn(c) => format!("{} = {} sampleOn {}", c.out, c.trigger, c.base),
         Constraint::Diff(c) => format!(
             "{} = {} [{}, {}]",
@@ -69,7 +75,7 @@ where
 mod tests {
     use super::*;
     use crate::kernel::constraints::{
-        Causality, Delay, Exclusion, Infinum, Intersection, Minus, Precedence, Repeat, Subclocking,
+        Causality, Delay, Exclusion, Infimum, Intersection, Minus, Precedence, Repeat, Subclocking,
         Supremum, Union,
     };
     use crate::lccsl::parser::parse_raw;
@@ -100,7 +106,7 @@ mod tests {
                 clocks: vec!["a", "b", "c"].into_iter().collect(),
             }
             .into(),
-            Infinum {
+            Infimum {
                 out: "c",
                 left: "a",
                 right: "b",
@@ -146,7 +152,7 @@ mod tests {
             .into(),
             Delay {
                 out: "a",
-                base: "b",
+                trigger: "b",
                 delay: 5,
                 on: None,
             }
