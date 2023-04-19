@@ -5,7 +5,7 @@ use ccsl::symbolic::ts::{Constant, TransitionSystem};
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{BitAnd, BitOr};
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -125,7 +125,7 @@ impl<V> Spec<V> {
 }
 
 type Variable = Cow<'static, str>;
-impl<C: Display> From<TransitionSystem<C>> for Spec<Variable> {
+impl<C: Display + Debug> From<TransitionSystem<C>> for Spec<Variable> {
     fn from(value: TransitionSystem<C>) -> Self {
         let initial = BooleanExpression::var("init");
         let ok = BooleanExpression::var("ok");
@@ -146,8 +146,30 @@ impl<C: Display> From<TransitionSystem<C>> for Spec<Variable> {
                 Constant::Bool(_) => VariableDeclaration::bool(v.to_string()),
                 Constant::Int(_) => VariableDeclaration::int(v.to_string()),
             }));
-        for (var, (init, next)) in value.states.into_iter() {}
         let mut f = |v: &ccsl::symbolic::ts::Variable<C>| Variable::Owned(v.to_string());
+        for (var, (init, next)) in value.states.into_iter() {
+            match (init, next) {
+                (Constant::Bool(init), ccsl::symbolic::ts::Expression::Bool(next)) => {
+                    nbac_spec.transit(
+                        f(&var),
+                        initial.if_then_elseb(
+                            BooleanExpression::Constant(init),
+                            next.map_var(&mut f.clone(), &mut f.clone()),
+                        ),
+                    );
+                }
+                (Constant::Int(init), ccsl::symbolic::ts::Expression::Int(next)) => {
+                    nbac_spec.transit(
+                        f(&var),
+                        initial.if_then_else(
+                            IntegerExpression::Constant(init),
+                            next.map_var(&mut f.clone(), &mut f.clone()),
+                        ),
+                    );
+                }
+                (init, next) => panic!("typing error in {:?} and {:?}", init, next),
+            }
+        }
         nbac_spec.assertion =
             Some(initial | value.restriction.map_var(&mut f.clone(), &mut f).into());
         nbac_spec

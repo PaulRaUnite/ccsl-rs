@@ -1,3 +1,4 @@
+use ccsl::symbolic::ts::Constant;
 use itertools::Itertools;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -432,6 +433,14 @@ impl<V: Clone> BooleanExpression<V> {
 type CCSLBoolExp<V> = ccsl::kernel::expressions::BooleanExpression<V, V>;
 type CCSLIntExp<V> = ccsl::kernel::expressions::IntegerExpression<V, V>;
 
+impl<V> From<Constant> for Expression<V> {
+    fn from(value: Constant) -> Self {
+        match value {
+            Constant::Bool(v) => Expression::Bool(BooleanExpression::Constant(v)),
+            Constant::Int(v) => Expression::Integer(IntegerExpression::Constant(v)),
+        }
+    }
+}
 impl<V> From<CCSLBoolExp<V>> for BooleanExpression<V> {
     fn from(value: CCSLBoolExp<V>) -> Self {
         match value {
