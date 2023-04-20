@@ -94,7 +94,7 @@ impl<C: Ord + Clone + Debug> Invariant<C> {
 }
 
 #[cfg(test)]
-mod test;
+mod test_abs;
 
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
 pub enum Step {

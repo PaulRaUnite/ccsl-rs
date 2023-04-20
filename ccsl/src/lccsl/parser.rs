@@ -199,16 +199,16 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
         let (init, max) = params.get(&i).copied().unwrap_or((None, None));
         constraints.push(if causality {
             Causality {
-                left: first,
-                right: clock.clone(),
+                cause: first,
+                effect: clock.clone(),
                 init,
                 max,
             }
             .into()
         } else {
             Precedence {
-                left: first,
-                right: clock.clone(),
+                cause: first,
+                effect: clock.clone(),
                 init,
                 max,
             }
@@ -250,8 +250,8 @@ fn parse_subclocking(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> 
     for clock in clocks {
         constraints.push(
             Subclocking {
-                left: first,
-                right: clock.clone(),
+                sub: first,
+                sup: clock.clone(),
             }
             .into(),
         );

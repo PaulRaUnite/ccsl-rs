@@ -101,8 +101,8 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
             }
             Constraint::Causality(c) => {
                 g.add_edge(
-                    c.left,
-                    c.right,
+                    c.cause,
+                    c.effect,
                     Edge {
                         text: Some(Cow::Borrowed("&#x227C;")),
                         ..Edge::asyncronous()
@@ -111,8 +111,8 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
             }
             Constraint::Precedence(c) => {
                 g.add_edge(
-                    c.left,
-                    c.right,
+                    c.cause,
+                    c.effect,
                     Edge {
                         text: Some(Cow::Borrowed("&#x227A;")),
                         ..Edge::asyncronous()
@@ -121,8 +121,8 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
             }
             Constraint::SubClock(c) => {
                 g.add_edge(
-                    c.left,
-                    c.right,
+                    c.sub,
+                    c.sup,
                     Edge {
                         text: Some(Cow::Borrowed("&sube;")),
                         start_shape: Arrow::none(),
@@ -376,9 +376,9 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
 fn constraint_to_dot_label<C: Display>(c: &Constraint<C>) -> String {
     match c {
         Constraint::Coincidence(c) => format!("{} = {}", c.left, c.right),
-        Constraint::Causality(c) => format!("{} &#x227C; {}", c.left, c.right),
-        Constraint::Precedence(c) => format!("{} &#x227A; {}", c.left, c.right),
-        Constraint::SubClock(c) => format!("{} &sube; {}", c.left, c.right),
+        Constraint::Causality(c) => format!("{} &#x227C; {}", c.cause, c.effect),
+        Constraint::Precedence(c) => format!("{} &#x227A; {}", c.cause, c.effect),
+        Constraint::SubClock(c) => format!("{} &sube; {}", c.sub, c.sup),
         Constraint::Exclusion(c) => c.clocks.iter().join("#"),
         Constraint::Infimum(c) => format!("{} = inf({}, {})", c.out, c.left, c.right),
         Constraint::Supremum(c) => format!("{} = sup({}, {})", c.out, c.left, c.right),

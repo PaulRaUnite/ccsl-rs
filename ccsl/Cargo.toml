@@ -23,6 +23,7 @@ bitmaps = "3.2"
 anyhow = "1"
 structopt = "0.3"
 absint={path="../absint"}
+bitvec = "1.0.1"
 
 [dependencies.derive_more]
 version = "0.99"

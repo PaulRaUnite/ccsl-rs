@@ -8,15 +8,15 @@ use experiments::write_graph;
 fn main() -> Result<(), Box<dyn Error>> {
     let spec: Vec<Constraint<u32>> = vec![
         Precedence {
-            left: 0u32,
-            right: 1u32,
+            cause: 0u32,
+            effect: 1u32,
             init: None,
             max: None,
         }
         .into(),
         Causality {
-            left: 1u32,
-            right: 2u32,
+            cause: 1u32,
+            effect: 2u32,
             init: None,
             max: None,
         }

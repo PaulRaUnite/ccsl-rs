@@ -15,15 +15,15 @@ fn main() {
 
     let spec: Specification<usize> = vec![
         Precedence {
-            left: 0,
-            right: 1,
+            cause: 0,
+            effect: 1,
             init: None,
             max: None,
         }
         .into(),
         Precedence {
-            left: 1,
-            right: 2,
+            cause: 1,
+            effect: 2,
             init: None,
             max: None,
         }

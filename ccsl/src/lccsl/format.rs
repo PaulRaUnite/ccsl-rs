@@ -34,17 +34,17 @@ where
         Constraint::Coincidence(c) => format!("Let {} be {}", c.left, c.right),
         Constraint::Causality(c) => format!(
             "Precedence {} <={} {}",
-            c.left,
+            c.cause,
             format_causal_params(&c.init, &c.max),
-            c.right
+            c.effect
         ),
         Constraint::Precedence(c) => format!(
             "Precedence {} <{} {}",
-            c.left,
+            c.cause,
             format_causal_params(&c.init, &c.max),
-            c.right
+            c.effect
         ),
-        Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
+        Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.sub, c.sup),
         Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
         Constraint::Infimum(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
         Constraint::Supremum(c) => format!("Let {} be sup({}, {})", c.out, c.left, c.right),
@@ -103,24 +103,20 @@ mod tests {
     fn lccsl_roundtrip() {
         let spec: Vec<Constraint<&str>> = vec![
             Precedence {
-                left: "a",
-                right: "b",
+                cause: "a",
+                effect: "b",
                 init: None,
                 max: None,
             }
             .into(),
             Causality {
-                left: "a",
-                right: "b",
+                cause: "a",
+                effect: "b",
                 init: None,
                 max: None,
             }
             .into(),
-            Subclocking {
-                left: "a",
-                right: "b",
-            }
-            .into(),
+            Subclocking { sub: "a", sup: "b" }.into(),
             Exclusion {
                 clocks: vec!["a", "b", "c"].into_iter().collect(),
             }

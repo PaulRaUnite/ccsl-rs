@@ -325,15 +325,15 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
             }
             .into(),
             Precedence {
-                left: 0,
-                right: 2,
+                cause: 0,
+                effect: 2,
                 init: None,
                 max: None,
             }
             .into(),
             Precedence {
-                left: 2,
-                right: 1,
+                cause: 2,
+                effect: 1,
                 init: None,
                 max: None,
             }
@@ -514,36 +514,36 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
         vec![
             // scp15v3
             Causality {
-                left: 0,
-                right: 2,
+                cause: 0,
+                effect: 2,
                 init: None,
                 max: None,
             }
             .into(),
             Precedence {
-                left: 2,
-                right: 4,
+                cause: 2,
+                effect: 4,
                 init: None,
                 max: None,
             }
             .into(),
             Causality {
-                left: 4,
-                right: 5,
+                cause: 4,
+                effect: 5,
                 init: None,
                 max: None,
             }
             .into(),
             Causality {
-                left: 1,
-                right: 3,
+                cause: 1,
+                effect: 3,
                 init: None,
                 max: None,
             }
             .into(),
             Precedence {
-                left: 3,
-                right: 4,
+                cause: 3,
+                effect: 4,
                 init: None,
                 max: None,
             }
@@ -554,8 +554,8 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
             }
             .into(),
             Precedence {
-                left: 3,
-                right: 4,
+                cause: 3,
+                effect: 4,
                 init: None,
                 max: Some(1),
             }
@@ -564,22 +564,22 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
         vec![
             // scp15-v3b
             Precedence {
-                left: 0,
-                right: 2,
+                cause: 0,
+                effect: 2,
                 init: None,
                 max: None,
             }
             .into(),
             Causality {
-                left: 2,
-                right: 3,
+                cause: 2,
+                effect: 3,
                 init: None,
                 max: None,
             }
             .into(),
             Precedence {
-                left: 1,
-                right: 2,
+                cause: 1,
+                effect: 2,
                 init: None,
                 max: None,
             }
@@ -590,8 +590,8 @@ fn old_examples_specs() -> impl Iterator<Item = (u64, Vec<Constraint<usize>>)> {
             }
             .into(),
             Precedence {
-                left: 4,
-                right: 3,
+                cause: 4,
+                effect: 3,
                 init: None,
                 max: Some(1),
             }

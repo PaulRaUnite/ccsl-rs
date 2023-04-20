@@ -81,11 +81,11 @@ impl<C: Clone + Eq + Hash> From<&'_ Coincidence<C>> for TransitionSystem<C> {
 /// ((d(a,b) = init and b) => a) and (d(a,b) = max => (a=>b))
 impl<C: Clone + Eq + Hash> From<&'_ Causality<C>> for TransitionSystem<C> {
     fn from(c: &'_ Causality<C>) -> Self {
-        let a_v = Variable::Clock(c.left.clone());
+        let a_v = Variable::Clock(c.cause.clone());
         let a_e = BooleanExpression::var(a_v.clone());
-        let b_v = Variable::Clock(c.right.clone());
+        let b_v = Variable::Clock(c.effect.clone());
         let b_e = BooleanExpression::var(b_v.clone());
-        let ab = Variable::Delta(Delta(c.left.clone(), c.right.clone()));
+        let ab = Variable::Delta(Delta(c.cause.clone(), c.effect.clone()));
 
         let ab_e = IntegerExpression::var(ab.clone());
         TransitionSystem {
@@ -102,11 +102,11 @@ impl<C: Clone + Eq + Hash> From<&'_ Causality<C>> for TransitionSystem<C> {
 /// (d(a,b) = 0 => !b) and (d(a,b) = max => (a=>b))
 impl<C: Clone + Eq + Hash> From<&'_ Precedence<C>> for TransitionSystem<C> {
     fn from(c: &'_ Precedence<C>) -> Self {
-        let a_v = Variable::Clock(c.left.clone());
+        let a_v = Variable::Clock(c.cause.clone());
         let a_e = BooleanExpression::var(a_v.clone());
-        let b_v = Variable::Clock(c.right.clone());
+        let b_v = Variable::Clock(c.effect.clone());
         let b_e = BooleanExpression::var(b_v.clone());
-        let ab = Variable::Delta(Delta(c.left.clone(), c.right.clone()));
+        let ab = Variable::Delta(Delta(c.cause.clone(), c.effect.clone()));
 
         let ab_e = IntegerExpression::var(ab.clone());
         TransitionSystem {
@@ -123,8 +123,8 @@ impl<C: Clone + Eq + Hash> From<&'_ Precedence<C>> for TransitionSystem<C> {
 /// a => b
 impl<C: Clone + Eq + Hash> From<&'_ Subclocking<C>> for TransitionSystem<C> {
     fn from(c: &'_ Subclocking<C>) -> Self {
-        let a = BooleanExpression::var(c.left.clone());
-        let b = BooleanExpression::var(c.right.clone());
+        let a = BooleanExpression::var(c.sub.clone());
+        let b = BooleanExpression::var(c.sup.clone());
         a.implies(b).into()
     }
 }
@@ -241,7 +241,7 @@ impl<C: Clone + Eq + Hash> From<&'_ Repeat<C>> for TransitionSystem<C> {
 impl<C: Clone + Eq + Hash> From<&'_ Delay<C>> for TransitionSystem<C> {
     fn from(c: &'_ Delay<C>) -> Self {
         let base_v = c.on.as_ref().unwrap_or(&c.trigger).clone();
-        let base = BooleanExpression::var(Variable::Clock(base_v.clone()));
+        let base = BooleanExpression::var(Variable::Clock(base_v));
         let trigger = BooleanExpression::var(Variable::Clock(c.trigger.clone()));
         let counter_v = Variable::Generic("g_d".to_owned()); // FIXME: internally declared variables can conflict with inputs
         let counter = IntegerExpression::var(counter_v.clone());

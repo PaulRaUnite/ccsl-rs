@@ -20,8 +20,8 @@ pub fn to_precedence_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
     spec.extend(g.raw_edges().iter().map(|e| {
         Precedence {
-            left: e.source().index(),
-            right: e.target().index(),
+            cause: e.source().index(),
+            effect: e.target().index(),
             init: None,
             max: None,
         }
@@ -34,8 +34,8 @@ pub fn to_subclocking_spec<N, E>(g: &DiGraph<N, E>) -> Vec<Constraint<usize>> {
     let mut spec = Vec::with_capacity(g.edge_count());
     spec.extend(g.raw_edges().iter().map(|e| {
         Subclocking {
-            left: e.source().index(),
-            right: e.target().index(),
+            sub: e.source().index(),
+            sup: e.target().index(),
         }
         .into()
     }));
@@ -73,21 +73,25 @@ pub fn random_specification(seed: u64, size: usize) -> Vec<Constraint<usize>> {
             .collect();
         let c: Constraint<usize> = match rng.gen_range(0..11) {
             0 => Causality {
-                left,
-                right,
+                cause: left,
+                effect: right,
                 init: None,
                 max: None,
             }
             .into(),
 
             1 => Precedence {
-                left,
-                right,
+                cause: left,
+                effect: right,
                 init: None,
                 max: None,
             }
             .into(),
-            2 => Subclocking { left, right }.into(),
+            2 => Subclocking {
+                sub: left,
+                sup: right,
+            }
+            .into(),
             3 => Exclusion { clocks: all }.into(),
             4 => Union { out, args: others }.into(),
             5 => Intersection { out, args: others }.into(),
@@ -176,8 +180,8 @@ pub fn random_connected_specification(
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Causality {
-                    left,
-                    right,
+                    cause: left,
+                    effect: right,
                     init: None,
                     max: None,
                 }
@@ -189,8 +193,8 @@ pub fn random_connected_specification(
                 known_clocks.insert(left);
                 known_clocks.insert(right);
                 Precedence {
-                    left,
-                    right,
+                    cause: left,
+                    effect: right,
                     init: None,
                     max: None,
                 }
@@ -200,7 +204,11 @@ pub fn random_connected_specification(
                 let (left, right) = gen_2_clocks(&mut rng, &known_clocks, clock_size);
                 known_clocks.insert(left);
                 known_clocks.insert(right);
-                Subclocking { left, right }.into()
+                Subclocking {
+                    sub: left,
+                    sup: right,
+                }
+                .into()
             }
             3 => {
                 if fixed_size {
@@ -319,8 +327,8 @@ fn shift_range(r: Range<usize>, shift: usize) -> Range<usize> {
 fn prec_chain(r: Range<usize>) -> impl Iterator<Item = Constraint<usize>> {
     r.clone().zip(shift_range(r, 1)).map(|(l, r)| {
         Precedence {
-            left: l,
-            right: r,
+            cause: l,
+            effect: r,
             init: None,
             max: None,
         }
@@ -447,8 +455,8 @@ pub fn point_backpressure<C: Clone>(
         }
         .into(),
         Precedence {
-            left: output,
-            right: delayed_input,
+            cause: output,
+            effect: delayed_input,
             init: None,
             max: None,
         }

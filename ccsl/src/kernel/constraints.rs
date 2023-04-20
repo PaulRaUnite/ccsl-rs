@@ -43,8 +43,8 @@ pub struct Alternates<C> {
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Causality<C> {
-    pub left: C,
-    pub right: C,
+    pub cause: C,
+    pub effect: C,
     pub init: Option<usize>,
     pub max: Option<usize>,
 }
@@ -55,8 +55,8 @@ impl<C> Causality<C> {
         F: FnMut(&C) -> B,
     {
         Causality {
-            left: f(&self.left),
-            right: f(&self.right),
+            cause: f(&self.cause),
+            effect: f(&self.effect),
             init: self.init,
             max: self.max,
         }
@@ -65,8 +65,8 @@ impl<C> Causality<C> {
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Precedence<C> {
-    pub left: C,
-    pub right: C,
+    pub cause: C,
+    pub effect: C,
     pub init: Option<usize>,
     pub max: Option<usize>,
 }
@@ -77,8 +77,8 @@ impl<C> Precedence<C> {
         F: FnMut(&C) -> B,
     {
         Precedence {
-            left: f(&self.left),
-            right: f(&self.right),
+            cause: f(&self.cause),
+            effect: f(&self.effect),
             init: self.init,
             max: self.max,
         }
@@ -104,8 +104,8 @@ impl<C> Exclusion<C> {
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Subclocking<C> {
-    pub left: C,
-    pub right: C,
+    pub sub: C,
+    pub sup: C,
 }
 
 impl<C> Subclocking<C> {
@@ -114,8 +114,8 @@ impl<C> Subclocking<C> {
         F: FnMut(&C) -> B,
     {
         Subclocking {
-            left: f(&self.left),
-            right: f(&self.right),
+            sub: f(&self.sub),
+            sup: f(&self.sup),
         }
     }
 }
@@ -226,7 +226,7 @@ pub struct Delay<C> {
     pub out: C,
     pub trigger: C,
     pub delay: usize,
-    pub on: Option<C>,
+    pub on: Option<C>, // to be defaulted to trigger if omitted
 }
 
 impl<C> Delay<C> {
@@ -367,14 +367,14 @@ where
 {
     fn from(c: &Causality<C>) -> Self {
         let mut system: STSBuilder<C> = (&Precedence {
-            left: c.left.clone(),
-            right: c.right.clone(),
+            cause: c.cause.clone(),
+            effect: c.effect.clone(),
             init: c.init,
             max: c.max,
         })
             .into();
         let start = State::new(0);
-        tr!(system, &start => &start, {c.left, c.right,});
+        tr!(system, &start => &start, {c.cause, c.effect,});
         system.set_name(c);
         system
     }
@@ -385,7 +385,7 @@ where
     C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Precedence<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.left.clone(), c.right.clone()));
+        let var = IntegerExpression::var(Delta(c.cause.clone(), c.effect.clone()));
         if c.init.is_some() && c.max.is_none() {
             panic!("init should be paired by max");
         }
@@ -403,21 +403,21 @@ where
         let mut prev = State::new(0);
         for i in 1..=(last - 1) {
             let next = State::new(i);
-            tr!(system, &prev => &next, {c.left, !c.right,});
-            tr!(system, &next => &next, {c.left, c.right,});
-            tr!(system, &next => &prev, {!c.left, c.right,});
+            tr!(system, &prev => &next, {c.cause, !c.effect,});
+            tr!(system, &next => &next, {c.cause, c.effect,});
+            tr!(system, &next => &prev, {!c.cause, c.effect,});
             prev = next;
         }
         let last = State::new(last);
         if c.max.is_none() {
-            tr!(system, &last => &last, {c.left, !c.right,});
-            tr!(system, var.eq(1), &last => &prev, {!c.left, c.right,});
-            tr!(system, var.more(1), &last => &last, {!c.left, c.right,});
+            tr!(system, &last => &last, {c.cause, !c.effect,});
+            tr!(system, var.eq(1), &last => &prev, {!c.cause, c.effect,});
+            tr!(system, var.more(1), &last => &last, {!c.cause, c.effect,});
         } else {
-            tr!(system, &last => &prev, {!c.left, c.right,});
+            tr!(system, &last => &prev, {!c.cause, c.effect,});
         }
-        tr!(system, &prev => &last, {c.left, !c.right,});
-        tr!(system, &last => &last, {c.left, c.right,});
+        tr!(system, &prev => &last, {c.cause, !c.effect,});
+        tr!(system, &last => &last, {c.cause, c.effect,});
 
         system
     }
@@ -443,12 +443,12 @@ where
     C: Clone + Ord + Hash + Display,
 {
     fn from(c: &Subclocking<C>) -> Self {
-        let var = IntegerExpression::var(Delta(c.right.clone(), c.left.clone()));
+        let var = IntegerExpression::var(Delta(c.sup.clone(), c.sub.clone()));
         let start = State::new(0).with_invariant(var.more_eq(0));
         let mut system = STSBuilder::new(&c, start.clone());
 
-        tr!(system, &start => &start, {c.right,});
-        tr!(system, &start => &start, {c.left, c.right,});
+        tr!(system, &start => &start, {c.sup,});
+        tr!(system, &start => &start, {c.sub, c.sup,});
         system
     }
 }
@@ -682,11 +682,11 @@ impl<C: Display> Display for Causality<C> {
             (Some(init), Some(max)) => write!(
                 f,
                 "{} <= (init: {}, max: {}) {}",
-                self.left, init, max, self.right
+                self.cause, init, max, self.effect
             ),
-            (Some(init), None) => write!(f, "{} <= (init: {}) {}", self.left, init, self.right),
-            (None, Some(max)) => write!(f, "{} <= (max: {}) {}", self.left, max, self.right),
-            (None, None) => write!(f, "{} <= {}", self.left, self.right),
+            (Some(init), None) => write!(f, "{} <= (init: {}) {}", self.cause, init, self.effect),
+            (None, Some(max)) => write!(f, "{} <= (max: {}) {}", self.cause, max, self.effect),
+            (None, None) => write!(f, "{} <= {}", self.cause, self.effect),
         }
     }
 }
@@ -697,11 +697,11 @@ impl<C: Display> Display for Precedence<C> {
             (Some(init), Some(max)) => write!(
                 f,
                 "{} < (init: {}, max: {}) {}",
-                self.left, init, max, self.right
+                self.cause, init, max, self.effect
             ),
-            (Some(init), None) => write!(f, "{} < (init: {}) {}", self.left, init, self.right),
-            (None, Some(max)) => write!(f, "{} < (max: {}) {}", self.left, max, self.right),
-            (None, None) => write!(f, "{} < {}", self.left, self.right),
+            (Some(init), None) => write!(f, "{} < (init: {}) {}", self.cause, init, self.effect),
+            (None, Some(max)) => write!(f, "{} < (max: {}) {}", self.cause, max, self.effect),
+            (None, None) => write!(f, "{} < {}", self.cause, self.effect),
         }
     }
 }
@@ -714,7 +714,7 @@ impl<C: Display> Display for Exclusion<C> {
 
 impl<C: Display> Display for Subclocking<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ⊂ {}", self.left, self.right)
+        write!(f, "{} ⊂ {}", self.sub, self.sup)
     }
 }
 
@@ -844,9 +844,9 @@ impl<C> Constraint<C> {
     pub fn clocks(&self) -> Vec<&C> {
         match self {
             Constraint::Coincidence(c) => vec![&c.left, &c.right],
-            Constraint::Causality(c) => vec![&c.left, &c.right],
-            Constraint::Precedence(c) => vec![&c.left, &c.right],
-            Constraint::SubClock(c) => vec![&c.left, &c.right],
+            Constraint::Causality(c) => vec![&c.cause, &c.effect],
+            Constraint::Precedence(c) => vec![&c.cause, &c.effect],
+            Constraint::SubClock(c) => vec![&c.sub, &c.sup],
             Constraint::Exclusion(c) => c.clocks.iter().collect_vec(),
             Constraint::Infimum(c) => vec![&c.out, &c.left, &c.right],
             Constraint::Supremum(c) => vec![&c.out, &c.left, &c.right],
