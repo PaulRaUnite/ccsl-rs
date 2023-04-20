@@ -1,0 +1,10 @@
+default:
+  just --list
+
+run FILE:
+  -LD_LIBRARY_PATH=. ./nbacg.opt {{FILE}} -analysis 2 -print "+p +a +r" -dot "{{FILE}}.dot +all"
+  dot -Tps {{FILE}}.dot > {{FILE}}.ps
+
+options:
+  -LD_LIBRARY_PATH=. ./nbacg.opt
+
