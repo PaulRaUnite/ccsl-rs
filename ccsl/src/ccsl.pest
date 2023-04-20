@@ -5,7 +5,9 @@ constraint = _{ repeat | causal_chain | subclock_chain | exclusion_chain | let_e
 
 causal_chain = {"Precedence" ~ id ~ (causality_kind ~ causal_params? ~ id)+ }
 causality_kind = {"<=" | "<"}
-causal_params = {"(" ~ "init:" ~ int ~ "max:" ~ infint ~ ")"}
+causal_params = {"(" ~ init? ~ maximum? ~ ")"}
+init = {"init:" ~ int}
+maximum = {"max:" ~ infint}
 
 repeat = { "repeat" ~ id ~ "every" ~ int? ~ id ~ from? ~ up_to? }
 from = {"from" ~ int}

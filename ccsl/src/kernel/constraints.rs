@@ -664,22 +664,6 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn into_automaton() {
-//         let a: STSBuilder<&str> = (&Coincidence {
-//             left: "a",
-//             right: "b",
-//         })
-//             .into();
-//         println!("{:?}", a);
-//         assert_eq!(a, 2)
-//     }
-// }
-
 impl<C: Display> Display for Coincidence<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}", self.left, self.right)

@@ -354,6 +354,5 @@ pub fn random_processing_network(
             g.add_edge(*source, *target, ());
         }
     }
-    println!("{} {}", g.node_count(), g.edge_count());
     (g, sources, sinks)
 }

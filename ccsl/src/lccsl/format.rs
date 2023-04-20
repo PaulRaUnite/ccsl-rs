@@ -25,15 +25,25 @@ Specification {} {{
     )
 }
 
-// TODO: add Display (?) newtype to get rid of unnecessary allocations
+//TODO: add Display (?) newtype to get rid of unnecessary allocations (low priority)
 pub fn render_constraint<C>(c: &Constraint<C>) -> String
 where
     C: Display,
 {
     match c {
         Constraint::Coincidence(c) => format!("Let {} be {}", c.left, c.right),
-        Constraint::Causality(c) => format!("Precedence {} <= {}", c.left, c.right), // FIXME: init and max are not formatted
-        Constraint::Precedence(c) => format!("Precedence {} < {}", c.left, c.right),
+        Constraint::Causality(c) => format!(
+            "Precedence {} <={} {}",
+            c.left,
+            format_causal_params(&c.init, &c.max),
+            c.right
+        ),
+        Constraint::Precedence(c) => format!(
+            "Precedence {} <{} {}",
+            c.left,
+            format_causal_params(&c.init, &c.max),
+            c.right
+        ),
         Constraint::SubClock(c) => format!("SubClocking {} <- {}", c.left, c.right),
         Constraint::Exclusion(c) => format!("Exclusion {}", c.clocks.iter().join(" # ")),
         Constraint::Infimum(c) => format!("Let {} be inf({}, {})", c.out, c.left, c.right),
@@ -68,6 +78,15 @@ where
                 .as_ref()
                 .map_or("Infinity".to_owned(), ToString::to_string)
         ),
+    }
+}
+
+fn format_causal_params(init: &Option<usize>, max: &Option<usize>) -> String {
+    match (init, max) {
+        (Some(init), Some(max)) => format!("(init: {} max: {})", init, max),
+        (None, Some(max)) => format!("(max: {})", max),
+        (Some(init), None) => format!("(init: {})", init),
+        (None, None) => "".to_string(),
     }
 }
 

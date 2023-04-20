@@ -120,7 +120,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
         })
         .collect();
     // FIXME: random as prefix for generated clocks is cringe
-    let prefix = "gc_".to_owned();
+    let prefix = "gc_";
     if unique_clocks.contains(&prefix) {
         panic!("couldn't generate prefix for numeric clocks")
     }
@@ -131,7 +131,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
             .clocks
             .into_iter()
             .map(|c| match c {
-                ID::C(s) => s,
+                ID::C(s) => s.to_owned(),
                 ID::G(n) => format!("{}{}", prefix, n),
             })
             .collect(),
@@ -140,7 +140,7 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
             .iter()
             .map(|c| {
                 c.map_clocks(|c| match c {
-                    ID::C(s) => s.clone(),
+                    ID::C(s) => (*s).to_owned(),
                     ID::G(n) => format!("{}{}", prefix, n),
                 })
             })
@@ -148,10 +148,8 @@ pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError>
     })
 }
 
-fn parse_clocks<'a>(input: Pair<'a, Rule>) -> impl Iterator<Item = ID> + 'a {
-    input
-        .into_inner()
-        .map(|clock| clock.as_str().to_string().into())
+fn parse_clocks(input: Pair<Rule>) -> impl Iterator<Item = ID> {
+    input.into_inner().map(|clock| clock.as_str().into())
 }
 
 fn parse_repeat(input: Pair<Rule>) -> Constraint<ID> {
@@ -162,7 +160,7 @@ fn parse_repeat(input: Pair<Rule>) -> Constraint<ID> {
 
     for field in input.into_inner() {
         match field.as_rule() {
-            Rule::id => clocks.push(field.as_str().to_string().into()),
+            Rule::id => clocks.push(field.as_str().into()),
             Rule::int => every = field.as_str().parse::<usize>().unwrap_or(1),
             Rule::from => from = Some(field.into_inner().as_str().parse::<usize>().unwrap()),
             Rule::up_to => up_to = parse_infint(field),
@@ -187,14 +185,10 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     let mut params = HashMap::new();
     for field in input.into_inner() {
         match field.as_rule() {
-            Rule::id => clocks.push(field.as_str().to_string().into()),
+            Rule::id => clocks.push(field.as_str().into()),
             Rule::causality_kind => kinds.push(field.as_str() == "<="),
             Rule::causal_params => {
-                // FIXME: should allow skipping init or max
-                let mut par = field.into_inner();
-                let init = par.next().unwrap().as_str().parse::<usize>().unwrap();
-                let max = parse_infint(par.next().unwrap());
-                params.insert(clocks.len(), (init, max));
+                params.insert(clocks.len() - 1, parse_causal_params(field));
             }
             _ => unreachable!(),
         }
@@ -202,9 +196,7 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     let mut first = clocks.remove(0);
     let mut constraints: Vec<Constraint<ID>> = Vec::with_capacity(clocks.len());
     for (i, (clock, causality)) in clocks.into_iter().zip(kinds).enumerate() {
-        let (init, max) = params
-            .get(&i)
-            .map_or((None, None), |(init, max)| (Some(*init), *max));
+        let (init, max) = params.get(&i).copied().unwrap_or((None, None));
         constraints.push(if causality {
             Causality {
                 left: first,
@@ -225,6 +217,31 @@ fn parse_causality(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
         first = clock;
     }
     constraints.into_iter()
+}
+
+fn parse_causal_params(input: Pair<Rule>) -> (Option<usize>, Option<usize>) {
+    let mut init = None;
+    let mut max = None;
+    for field in input.into_inner() {
+        match field.as_rule() {
+            Rule::init => {
+                init = Some(
+                    field
+                        .into_inner()
+                        .next()
+                        .unwrap()
+                        .as_str()
+                        .parse::<usize>()
+                        .unwrap(),
+                );
+            }
+            Rule::maximum => {
+                max = parse_infint(field.into_inner().next().unwrap());
+            }
+            _ => unreachable!(),
+        }
+    }
+    (init, max)
 }
 fn parse_subclocking(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     let mut clocks = parse_clock_arguments(input);
@@ -247,7 +264,7 @@ fn parse_clock_arguments(input: Pair<Rule>) -> Vec<ID> {
     let mut clocks: Vec<ID> = Vec::with_capacity(2);
     for field in input.into_inner() {
         match field.as_rule() {
-            Rule::id => clocks.push(field.as_str().to_string().into()),
+            Rule::id => clocks.push(field.as_str().into()),
             _ => unreachable!(),
         }
     }
@@ -268,20 +285,19 @@ fn parse_exclusion(input: Pair<Rule>) -> impl Iterator<Item = Constraint<ID>> {
     constraints.into_iter()
 }
 
-// TODO: replace String with &'a str
 #[derive(Debug, Clone, Hash, Ord, Eq, PartialOrd, PartialEq, From)]
-pub enum ID {
-    C(String),
+pub enum ID<'a> {
+    C(&'a str),
     G(usize),
 }
 
-fn parse_let_expr(
-    input: Pair<Rule>,
+fn parse_let_expr<'i>(
+    input: Pair<'i, Rule>,
     gen: &RefCell<RangeFrom<usize>>,
-) -> impl Iterator<Item = Constraint<ID>> {
+) -> impl Iterator<Item = Constraint<ID<'i>>> {
     let mut inner = input.into_inner();
     let mut constraints = Vec::new();
-    let out: ID = inner.next().unwrap().as_str().to_string().into();
+    let out: ID = inner.next().unwrap().as_str().into();
     let expr_out = parse_expression(inner, gen, &mut constraints);
     if let Some(last) = constraints.last_mut() {
         *last = last.map_clocks(|c| {
@@ -313,15 +329,15 @@ lazy_static! {
     };
 }
 
-fn parse_expression(
-    input: Pairs<Rule>,
+fn parse_expression<'a>(
+    input: Pairs<'a, Rule>,
     gen: &RefCell<RangeFrom<usize>>,
-    container: &mut Vec<Constraint<ID>>,
-) -> ID {
+    container: &mut Vec<Constraint<ID<'a>>>,
+) -> ID<'a> {
     let mut primaries: Vec<Constraint<ID>> = Vec::new();
     let out = PREC_CLIMBER
         .map_primary(|pair: Pair<Rule>| match pair.as_rule() {
-            Rule::id => pair.as_str().to_string().into(),
+            Rule::id => pair.as_str().into(),
             Rule::prefix_expr => parse_prefix_expression(pair, gen, &mut primaries),
             Rule::expression => parse_expression(pair.into_inner(), gen, &mut primaries),
             _ => unreachable!(),
@@ -356,14 +372,14 @@ fn parse_expression(
     out
 }
 
-fn parse_prefix_expression(
-    input: Pair<Rule>,
+fn parse_prefix_expression<'a>(
+    input: Pair<'a, Rule>,
     gen: &RefCell<RangeFrom<usize>>,
-    container: &mut Vec<Constraint<ID>>,
-) -> ID {
+    container: &mut Vec<Constraint<ID<'a>>>,
+) -> ID<'a> {
     let mut inner = input.into_inner();
     let sup = inner.next().unwrap().as_str() == "sup";
-    let args = inner.map(|c| c.as_str().to_string().into()).collect_vec();
+    let args = inner.map(|c| c.as_str().into()).collect_vec();
     if sup {
         args.into_iter()
             .reduce(|left, right| {
@@ -399,8 +415,8 @@ fn parse_prefix_expression(
 
 fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
     let mut inner = input.into_inner();
-    let out: ID = inner.next().unwrap().as_str().to_string().into();
-    let first: ID = inner.next().unwrap().as_str().to_string().into();
+    let out: ID = inner.next().unwrap().as_str().into();
+    let first: ID = inner.next().unwrap().as_str().into();
     let field = inner.next().unwrap();
     match field.as_rule() {
         Rule::delay => {
@@ -409,20 +425,14 @@ fn parse_periodic_def(input: Pair<Rule>) -> Constraint<ID> {
                 out,
                 trigger: first,
                 delay: inner.next().unwrap().as_str().parse::<usize>().unwrap(),
-                on: inner.next().map(|v| v.as_str().to_string().into()),
+                on: inner.next().map(|v| v.as_str().into()),
             }
             .into()
         }
         Rule::sampleOn => SampleOn {
             out,
             trigger: first,
-            base: field
-                .into_inner()
-                .next()
-                .unwrap()
-                .as_str()
-                .to_string()
-                .into(),
+            base: field.into_inner().next().unwrap().as_str().into(),
         }
         .into(),
         Rule::slice => {
@@ -488,7 +498,8 @@ mod tests {
 
             Let m0 be a + off
             Let m be m0 - onn
-            Precedence a < m
+            Precedence a < (init: 5 max: 10) m
+            Precedence a < (max: 10) m
             SubClocking onn <- a
             Exclusion off # a
             Let out be m and t
