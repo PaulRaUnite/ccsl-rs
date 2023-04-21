@@ -10,12 +10,16 @@ use structopt::StructOpt;
 use ccsl::lccsl::format::render;
 
 use anyhow::{anyhow, Result};
+use ccsl::dot::render_dot;
 use ccsl::generation::graph::random_processing_network;
 use ccsl::generation::specification::{
     cycle_with_tail_and_spike, point_backpressure, precedence_trees,
     random_connected_specification, to_precedence_spec, trees_with_backpressure, NetworkParams,
 };
+use ccsl::kernel::automata::label::ClockLabelClassic;
 use ccsl::kernel::constraints::Constraint;
+use ccsl::optimization::root::weights_with_init;
+use ccsl::optimization::{optimize, order_via_dijkstra};
 use itertools::Itertools;
 use rand::prelude::{SliceRandom, StdRng};
 use tools::file_or_stdout;
@@ -29,30 +33,33 @@ struct App {
 
 #[derive(StructOpt, Debug)]
 enum Cmd {
-    /// Generate a directory of specifications
-    /// Files are outputted in LightCCSL format, with name format <size>-<seed>.lc
-    /// Subdirectory is created for easier separation
+    /// Generates a directory of specifications.
+    /// Files are outputted in LightCCSL format, with naming that reflects generation parameters.
+    /// By default, it creates subdirectories for easier separation of generation
+    /// with different parameters (seeds, sizes, etc).
     Dir {
+        /// Type of specification to generate
         #[structopt(flatten)]
         family: Family,
-        /// Path to a directory to generate CCSL specifications
+        /// Path to a directory to generate LightCCSL specifications
         dir: PathBuf,
         /// Amount of specifications to generate
         #[structopt(short, long)]
         amount: usize,
-        /// Outputs directly into the specified directory without creating a subdirectory for specific starting seed
+        /// Outputs directly into the specified directory without
+        /// creating a subdirectory for specific starting seed and family
         #[structopt(short, long)]
         flatten: bool,
-        /// Output graph alongside (in DOT format)
+        /// Enables output of constraint graph alongside a specification (in DOT format)
         #[structopt(short, long)]
         graph: bool,
-        /// Conflict-based topological sorting
+        /// Enables conflict-based topological presorting
         #[structopt(short, long)]
         sort: bool,
     },
-    /// Generate one specification
+    /// Generate one random specification
     One {
-        /// File path to the output file, stdout if omitted
+        /// File path to an output file, stdout if omitted
         file: Option<PathBuf>,
         /// Size of the specification
         #[structopt(short, long)]
@@ -69,20 +76,21 @@ enum Family {
         /// Starting seed of a random generator to generate specification seeds
         #[structopt(short, long)]
         seed: u64,
-        /// Size of specifications to generate
+        /// Specifications' size
         #[structopt(short, long)]
         size: usize,
     },
     Tree {
-        /// Size of specifications to generate
+        /// Specifications' size
         #[structopt(short, long)]
         size: usize,
-        /// Add backpressure constraints (to make it finite)
+        /// Add backpressure constraints (to make it finite).
+        /// These constraints do not count into size parameter
         #[structopt(short, long)]
         backpressure: Option<NonZeroUsize>,
     },
     Network {
-        /// Layer's dimensions (format is "1,2,3")
+        /// Layers' dimensions (format is "1,2,3")
         #[structopt(short, long = "dim")]
         dimensions: NetworkParams,
         /// Starting seed of a random generator to generate specification seeds
@@ -123,6 +131,8 @@ impl Display for Family {
 fn generate_to_dir(
     dir: &Path,
     specs: impl Iterator<Item = (String, Vec<Constraint<usize>>)>,
+    graph: bool,
+    sort: bool,
 ) -> Result<()> {
     for (spec_name, spec) in specs {
         let filepath_spec = dir.join(&spec_name).with_extension("lc");
@@ -130,13 +140,26 @@ fn generate_to_dir(
             OpenOptions::new()
                 .write(true)
                 .create(true)
-                .open(filepath_spec)?,
+                .open(&filepath_spec)?,
         );
-        let spec = spec
+        let mut spec = spec
             .into_iter()
             .map(|c| c.map_clocks(|clock| format!("c{}", clock)))
             .collect_vec();
+        if sort {
+            optimize::<_, ClockLabelClassic<_>>(&spec, &weights_with_init, &order_via_dijkstra)
+                .apply_slice_in_place(&mut spec);
+        }
         write!(spec_file, "{}", &render(&spec, &spec_name))?;
+        if graph {
+            let mut graph_file = BufWriter::new(
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(filepath_spec.with_extension("dot"))?,
+            );
+            render_dot(&mut graph_file, &spec_name, &spec)?;
+        }
     }
     Ok(())
 }
@@ -217,6 +240,8 @@ fn main() -> Result<()> {
                             random_connected_specification(seed, size, true),
                         )
                     }),
+                    graph,
+                    sort,
                 )?,
                 Family::Tree { size, backpressure } => {
                     let specs: Box<dyn Iterator<Item = Vec<Constraint<usize>>>> =
@@ -230,6 +255,8 @@ fn main() -> Result<()> {
                         specs
                             .enumerate()
                             .map(|(i, spec)| (format!("tree_{}", i), spec)),
+                        graph,
+                        sort,
                     )?
                 }
                 Family::Network {
@@ -243,6 +270,7 @@ fn main() -> Result<()> {
                         if let Some(buffer) = backpressure {
                             let mut rng = StdRng::seed_from_u64(seed);
                             spec.extend(point_backpressure(
+                                // FIXME: point backpressure is not sufficient to make network of precedence finite
                                 inputs.choose(&mut rng).unwrap().index(),
                                 outputs.choose(&mut rng).unwrap().index(),
                                 buffer.get(),
@@ -253,7 +281,7 @@ fn main() -> Result<()> {
                         }
                         (format!("net_{}", seed), spec)
                     });
-                    generate_to_dir(&dir, specs)?
+                    generate_to_dir(&dir, specs, graph, sort)?
                 }
                 Family::Cycle {
                     size,
@@ -276,6 +304,8 @@ fn main() -> Result<()> {
                             }
                             (format!("cycle_{}_{}_{}", tail, size, spike), spec)
                         }),
+                    graph,
+                    sort,
                 )?,
             }
         }
