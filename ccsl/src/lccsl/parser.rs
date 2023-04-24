@@ -45,6 +45,7 @@ pub enum ParseError {
 //  Main problem is that some expression can nest, creating anonymous clocks,
 //  which then are rendered explicitly in roundtrip test.
 
+// TODO: maybe make it an implementation of FromStr
 pub fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
     let file = parse_raw(input)?;
     let mut name = "".to_owned();

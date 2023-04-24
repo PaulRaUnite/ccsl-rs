@@ -25,7 +25,8 @@ Specification {} {{
     )
 }
 
-//TODO: add Display (?) newtype to get rid of unnecessary allocations (low priority)
+// TODO: add Display (?) newtype to get rid of unnecessary allocations (low priority)
+// TODO: I guess it should be a method (something like `dot_format`)
 pub fn render_constraint<C>(c: &Constraint<C>) -> String
 where
     C: Display,
