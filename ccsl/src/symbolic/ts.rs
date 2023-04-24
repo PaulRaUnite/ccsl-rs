@@ -228,11 +228,12 @@ impl<C: Clone + Eq + Hash> From<&'_ Repeat<C>> for TransitionSystem<C> {
         let counter_v = Variable::Generic("r".to_owned());
         let counter = IntegerExpression::var(counter_v.clone());
 
+        let every = c.every - 1;
         TransitionSystem {
-            states: map! {counter_v => (0.into(), counter.eq(c.every as i64).if_then_else(0,base_e.if_then_else(counter.clone()+1.into(), counter.clone())).into())},
+            states: map! {counter_v => (0.into(), counter.eq(every as i64).if_then_else(0,base_e.if_then_else(counter.clone()+1.into(), counter.clone())).into())},
             inputs: set! {base_v,out_v},
-            restriction: counter.eq(c.every as i64).implies(base_e.eq(out_e.clone()))
-                & counter.less(c.every as i64).implies(!out_e),
+            restriction: counter.eq(every as i64) & base_e.eq(out_e.clone())
+                | counter.less(every as i64) & !out_e,
         }
     }
 }

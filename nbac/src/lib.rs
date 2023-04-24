@@ -1,12 +1,13 @@
 #[macro_use]
 extern crate derive_more;
+#[macro_use]
+extern crate table_test;
 
 use ccsl::symbolic::ts::{Constant, TransitionSystem};
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::{BitAnd, BitOr};
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum VariableDeclaration<V> {
@@ -176,92 +177,229 @@ impl<C: Display + Debug> From<TransitionSystem<C>> for Spec<Variable> {
     }
 }
 
-pub fn add_boundness_goal(mut spec: Spec<Variable>, bound: u32) -> Spec<Variable> {
-    let ok = BooleanExpression::var("ok".to_owned());
-    let init = BooleanExpression::var("init".to_owned());
-    spec.transit(
-        "ok".to_owned(),
-        init.if_then_elseb(
-            true,
-            spec.states
-                .iter()
-                .filter_map(|s| match s {
-                    VariableDeclaration::Bool(_) => None,
-                    VariableDeclaration::Integer(v) => {
-                        let v = IntegerExpression::var(v.clone());
-                        Some(v.less_eq(bound as i64) & v.more_eq(-(bound as i64)))
-                    }
-                })
-                .reduce(BitAnd::bitand)
-                .map_or(ok.clone(), |v| ok & v),
-        ),
-    );
-    spec
-}
-pub fn add_deadlock_goal(mut spec: Spec<Variable>, step_limit: u32) -> Spec<Variable> {
-    let ok = BooleanExpression::var("ok".to_owned());
-    let init = BooleanExpression::var("init".to_owned());
-    let clocks = spec
-        .inputs
-        .iter()
-        .map(|d| d.variable())
-        .cloned()
-        .collect_vec();
-    for v in &clocks {
-        let dead_str = format!("dead_{}", v);
-        let kill_str = format!("kill_{}", v);
+pub mod goal {
+    use crate::{
+        BooleanComparisonKind, BooleanExpression, IntegerExpression, Spec, Variable,
+        VariableDeclaration,
+    };
+    use ccsl::kernel::test_corpus::Trace;
+    use itertools::Itertools;
+    use std::ops::{BitAnd, BitOr, Not};
 
-        spec.inputs
-            .push(VariableDeclaration::bool(kill_str.clone()));
-        spec.states
-            .push(VariableDeclaration::bool(dead_str.clone()));
-        let dead = BooleanExpression::var(dead_str.clone());
-        let kill = BooleanExpression::var(kill_str);
-        spec.transit(dead_str, init.if_then_elseb(false, dead | kill));
+    pub fn boundness(mut spec: Spec<Variable>, bound: u32) -> Spec<Variable> {
+        let ok = BooleanExpression::var("ok".to_owned());
+        let init = BooleanExpression::var("init".to_owned());
+        spec.transit(
+            "ok".to_owned(),
+            init.if_then_elseb(
+                true,
+                spec.states
+                    .iter()
+                    .filter_map(|s| match s {
+                        VariableDeclaration::Bool(_) => None,
+                        VariableDeclaration::Integer(v) => {
+                            let v = IntegerExpression::var(v.clone());
+                            Some(v.less_eq(bound as i64) & v.more_eq(-(bound as i64)))
+                        }
+                    })
+                    .reduce(BitAnd::bitand)
+                    .map_or(ok.clone(), |v| ok & v),
+            ),
+        );
+        spec
     }
 
-    let lock_count = IntegerExpression::var("lock_count".to_owned());
-    spec.transit(
-        "lock_count".to_owned(),
-        init.if_then_else(
-            0,
-            (clocks
-                .iter()
-                .map(|v| BooleanExpression::var(format!("dead_{}", v)))
-                .reduce(BitOr::bitor)
-                .unwrap()
-                & !clocks
+    pub fn deadlock(mut spec: Spec<Variable>, step_limit: u32) -> Spec<Variable> {
+        let ok = BooleanExpression::var("ok".to_owned());
+        let init = BooleanExpression::var("init".to_owned());
+        let clocks = spec
+            .inputs
+            .iter()
+            .map(|d| d.variable())
+            .cloned()
+            .collect_vec();
+        for v in &clocks {
+            let dead_str = format!("dead_{}", v);
+            let kill_str = format!("kill_{}", v);
+
+            spec.inputs
+                .push(VariableDeclaration::bool(kill_str.clone()));
+            spec.states
+                .push(VariableDeclaration::bool(dead_str.clone()));
+            let dead = BooleanExpression::var(dead_str.clone());
+            let kill = BooleanExpression::var(kill_str);
+            spec.transit(dead_str, init.if_then_elseb(false, dead | kill));
+        }
+
+        let lock_count = IntegerExpression::var("lock_count".to_owned());
+        spec.transit(
+            "lock_count".to_owned(),
+            init.if_then_else(
+                0,
+                (clocks
                     .iter()
                     .map(|v| BooleanExpression::var(format!("dead_{}", v)))
-                    .reduce(BitAnd::bitand)
-                    .unwrap()) // TODO: not sure
-            .if_then_else(lock_count.clone() + 1i64.into(), lock_count.clone()),
-        ),
-    );
-    spec.states.push(VariableDeclaration::int("lock_count"));
-    spec.assertion = Some(match spec.assertion.unwrap() {
-        BooleanExpression::BooleanBinary { kind, left, right } => {
+                    .reduce(BitOr::bitor)
+                    .unwrap()
+                    & !clocks
+                        .iter()
+                        .map(|v| BooleanExpression::var(format!("dead_{}", v)))
+                        .reduce(BitAnd::bitand)
+                        .unwrap()) // TODO: not sure
+                .if_then_else(lock_count.clone() + 1i64.into(), lock_count.clone()),
+            ),
+        );
+        spec.states.push(VariableDeclaration::int("lock_count"));
+        spec.assertion = Some(match spec.assertion.unwrap() {
+            BooleanExpression::BooleanBinary { kind, left, right } => {
+                BooleanExpression::BooleanBinary {
+                    kind,
+                    left: Box::new(
+                        *left
+                            & clocks
+                                .iter()
+                                .map(|c| {
+                                    BooleanExpression::var(format!("dead_{}", c))
+                                        .implies(BooleanExpression::var(c.to_string()))
+                                })
+                                .reduce(BitAnd::bitand)
+                                .unwrap(),
+                    ),
+                    right,
+                }
+            }
+            _ => panic!("expected boolean or"),
+        });
+        spec.transit(
+            "ok".to_owned(),
+            init.if_then_elseb(true, ok & lock_count.less_eq(step_limit as i64)),
+        );
+        spec
+    }
+
+    pub fn positive_trace_check<const L: usize>(
+        mut spec: Spec<Variable>,
+        trace: &Trace<Variable, L>,
+    ) -> Spec<Variable> {
+        let assertion = match spec.assertion.unwrap() {
             BooleanExpression::BooleanBinary {
                 kind,
-                left: Box::new(
-                    *left
-                        & clocks
-                            .iter()
-                            .map(|c| {
-                                BooleanExpression::var(format!("dead_{}", c))
-                                    .implies(BooleanExpression::var(c.to_string()))
-                            })
-                            .reduce(BitAnd::bitand)
-                            .unwrap(),
-                ),
+                left: _,
                 right,
-            }
-        }
-        _ => panic!("expected boolean or"),
-    });
-    spec.transit(
-        "ok".to_owned(),
-        init.if_then_elseb(true, ok & lock_count.less_eq(step_limit as i64)),
-    );
-    spec
+            } if kind == BooleanComparisonKind::Or => right,
+            _ => panic!("unexpected operation in root of assertion"),
+        };
+        let step = IntegerExpression::var("step");
+        let init = BooleanExpression::var("init".to_owned());
+        let ok = BooleanExpression::var("ok".to_owned());
+        spec.states.push(VariableDeclaration::int("step"));
+        spec.assertion = Some(
+            init.clone()
+                | trace
+                    .interpret()
+                    .enumerate()
+                    .map(|(i, ticks)| {
+                        step.eq(i as i64)
+                            & ticks
+                                .into_iter()
+                                .map(|(clock, present)| {
+                                    let clock = BooleanExpression::var(clock);
+                                    if !present {
+                                        !clock
+                                    } else {
+                                        clock
+                                    }
+                                })
+                                .reduce(BitAnd::bitand)
+                                .unwrap()
+                    })
+                    .reduce(BitOr::bitor)
+                    .unwrap(),
+        );
+        spec.transit(
+            "step",
+            init.if_then_else(
+                0,
+                step.clone()
+                    + (spec
+                        .inputs
+                        .iter()
+                        .map(|def| BooleanExpression::var(def.variable().clone()))
+                        .reduce(BitOr::bitor)
+                        .unwrap()
+                        | spec
+                            .inputs
+                            .iter()
+                            .map(|def| BooleanExpression::var(def.variable().clone()))
+                            .map(Not::not)
+                            .reduce(BitAnd::bitand)
+                            .unwrap())
+                    .if_then_else(1, 0),
+            ),
+        );
+        spec.transit(
+            "ok",
+            init.if_then_elseb(
+                true,
+                (ok & *assertion) | step.more_eq(Trace::<Variable, L>::len() as i64),
+            ),
+        );
+
+        spec
+    }
+    pub fn negative_trace_check<const L: usize>(
+        mut spec: Spec<Variable>,
+        trace: &Trace<Variable, L>,
+    ) -> Spec<Variable> {
+        spec.states.push(VariableDeclaration::int("step"));
+        let init = BooleanExpression::var("init");
+        let step = IntegerExpression::var("step");
+        spec.transit(
+            "step",
+            init.if_then_else(
+                0,
+                step.clone()
+                    + (spec
+                        .inputs
+                        .iter()
+                        .map(|def| BooleanExpression::var(def.variable().clone()))
+                        .reduce(BitOr::bitor)
+                        .unwrap())
+                    .if_then_else(1, 0),
+            ),
+        );
+        spec.transit(
+            "ok",
+            init.if_then_elseb(
+                true,
+                BooleanExpression::var("ok") & step.less(Trace::<Variable, L>::len() as i64),
+            ),
+        );
+        spec.assertion = spec.assertion.map(|assertion| {
+            assertion
+                & trace
+                    .interpret()
+                    .enumerate()
+                    .map(|(i, ticks)| {
+                        step.eq(i as i64)
+                            & ticks
+                                .into_iter()
+                                .map(|(clock, present)| {
+                                    let clock = BooleanExpression::var(clock);
+                                    if !present {
+                                        !clock
+                                    } else {
+                                        clock
+                                    }
+                                })
+                                .reduce(BitAnd::bitand)
+                                .unwrap()
+                    })
+                    .reduce(BitOr::bitor)
+                    .unwrap()
+        });
+        spec
+    }
 }
+#[cfg(test)]
+mod tests;

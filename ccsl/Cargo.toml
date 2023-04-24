@@ -28,4 +28,4 @@ bitvec = "1.0.1"
 [dependencies.derive_more]
 version = "0.99"
 default-features = false
-features = ["from", "into"]
+features = ["from", "into", "iterator", "into_iterator"]

@@ -43,7 +43,7 @@ struct DataEntry {
 
 fn gen(dir: &Path, out: &Path) -> Result<()> {
     let mut wrt = csv::Writer::from_path(out)?;
-    let mut errs = csv::Writer::from_path("/home/ptokarie/code/ccsl-rs/examples/err.csv")?;
+    let mut errs = csv::Writer::from_path("./examples/err.csv")?;
     let mut crashes = 0;
     let mut results = vec![];
     let mut count = 0;
@@ -64,7 +64,7 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
         count += 1;
         println!("{} {}", count, &filename);
         let nbac_file = entry.path().with_extension("lc.nbac");
-        let output = Command::new("/home/ptokarie/code/ccsl-rs/target/release/ccsl2nbac")
+        let output = Command::new("./target/release/ccsl2nbac")
             .arg(entry.path())
             .arg(&nbac_file)
             .output()?;
@@ -79,10 +79,10 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
             println!("ccsl2nbac crashed: {}", &filename);
             continue;
         }
-        let output = Command::new("/home/ptokarie/Applications/nbac/nbacg.opt")
-            .env("LD_LIBRARY_PATH", "/home/ptokarie/Applications/nbac/")
-            .arg("-postpre") // TODO: fixes crashes, but why??
-            .arg("-drelation 1")
+        let output = Command::new("./nbac/tool/nbacg.opt")
+            .env("LD_LIBRARY_PATH", "./nbac/tool/")
+            .arg("-postpre")
+            .arg("-drelation 1") // TODO: fixes crashes, but why??
             .arg(&nbac_file)
             .output()?;
         if !output.stderr.is_empty() {

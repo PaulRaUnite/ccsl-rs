@@ -2,7 +2,7 @@ use anyhow::Result;
 use ccsl::kernel::constraints::Specification;
 use ccsl::lccsl::parser::parse_to_string;
 use ccsl::symbolic::ts::TransitionSystem;
-use nbac::{add_boundness_goal, add_deadlock_goal};
+use nbac::goal::{boundness, deadlock};
 use std::io::read_to_string;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -42,8 +42,8 @@ fn main() -> Result<()> {
         .collect::<TransitionSystem<String>>()
         .into();
     let nbac_spec = match args.property {
-        Property::Boundness { bound } => add_boundness_goal(nbac_spec, bound),
-        Property::Liveness { limit } => add_deadlock_goal(nbac_spec, limit),
+        Property::Boundness { bound } => boundness(nbac_spec, bound),
+        Property::Liveness { limit } => deadlock(nbac_spec, limit),
     };
     write!(&mut file_or_stdout(&args.out)?, "{}", nbac_spec)?;
     Ok(())
