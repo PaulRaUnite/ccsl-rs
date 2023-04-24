@@ -10,8 +10,11 @@ use thiserror::Error;
 use crate::kernel::constraints::*;
 use itertools::Itertools;
 use std::cell::RefCell;
+use std::hash::Hash;
 use std::iter::FromIterator;
 use std::ops::RangeFrom;
+use std::slice::Iter;
+use std::vec::IntoIter;
 
 // origin LcDsl.xtext from lightccsl-feature.zip/plugins/lcdsl.jar
 #[derive(Parser)]
@@ -22,12 +25,51 @@ pub fn parse_raw(input: &str) -> Result<Pair<Rule>, pest::error::Error<Rule>> {
     Ok(LightCCSLParser::parse(Rule::file, input)?.next().unwrap())
 }
 
-// TODO: unify with another Specification
 #[derive(Debug, Clone)]
 pub struct Specification<C> {
     pub name: String,
     pub clocks: HashSet<C>,
     pub constraints: Vec<Constraint<C>>,
+}
+
+impl<C> Specification<C> {
+    pub fn map_clocks<B, F>(&self, mut f: F) -> Specification<B>
+    where
+        F: FnMut(&C) -> B,
+        B: Hash + Eq + Ord,
+    {
+        Specification {
+            name: self.name.clone(),
+            clocks: self.clocks.iter().map(&mut f).collect(),
+            constraints: self
+                .constraints
+                .iter()
+                .map(|c| c.map_clocks(|c| f(c)))
+                .collect(),
+        }
+    }
+
+    pub fn iter(&self) -> Iter<'_, Constraint<C>> {
+        self.into_iter()
+    }
+}
+
+impl<C> IntoIterator for Specification<C> {
+    type Item = Constraint<C>;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.constraints.into_iter()
+    }
+}
+
+impl<'a, C> IntoIterator for &'a Specification<C> {
+    type Item = &'a Constraint<C>;
+    type IntoIter = Iter<'a, Constraint<C>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.constraints.iter()
+    }
 }
 
 #[derive(Error, Debug)]
@@ -45,108 +87,119 @@ pub enum ParseError {
 //  Main problem is that some expression can nest, creating anonymous clocks,
 //  which then are rendered explicitly in roundtrip test.
 
-// TODO: maybe make it an implementation of FromStr
-pub fn parse(input: &str) -> Result<Specification<ID>, ParseError> {
-    let file = parse_raw(input)?;
-    let mut name = "".to_owned();
-    let mut clocks = HashSet::new();
-    let mut constraints: Vec<Constraint<ID>> = vec![];
+impl<'a> TryFrom<&'a str> for Specification<ID<'a>> {
+    type Error = ParseError;
 
-    let clock_gen = RefCell::new(0usize..);
+    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
+        let file = parse_raw(input)?;
+        let mut name = "".to_owned();
+        let mut clocks = HashSet::new();
+        let mut constraints: Vec<Constraint<ID>> = vec![];
 
-    for record in file.into_inner() {
-        match record.as_rule() {
-            Rule::specification => {
-                for field in record.into_inner() {
-                    match field.as_rule() {
-                        Rule::id => name = field.as_str().to_string(),
-                        Rule::clocks => clocks.extend(parse_clocks(field)),
-                        Rule::repeat => constraints.push(parse_repeat(field)),
-                        Rule::causal_chain => constraints.extend(parse_causality(field)),
-                        Rule::subclock_chain => constraints.extend(parse_subclocking(field)),
-                        Rule::exclusion_chain => constraints.extend(parse_exclusion(field)),
-                        Rule::let_expr => constraints.extend(parse_let_expr(field, &clock_gen)),
-                        Rule::periodic_def => constraints.push(parse_periodic_def(field)),
-                        _ => unreachable!(),
-                    };
+        let clock_gen = RefCell::new(0usize..);
+
+        for record in file.into_inner() {
+            match record.as_rule() {
+                Rule::specification => {
+                    for field in record.into_inner() {
+                        match field.as_rule() {
+                            Rule::id => name = field.as_str().to_string(),
+                            Rule::clocks => clocks.extend(parse_clocks(field)),
+                            Rule::repeat => constraints.push(parse_repeat(field)),
+                            Rule::causal_chain => constraints.extend(parse_causality(field)),
+                            Rule::subclock_chain => constraints.extend(parse_subclocking(field)),
+                            Rule::exclusion_chain => constraints.extend(parse_exclusion(field)),
+                            Rule::let_expr => constraints.extend(parse_let_expr(field, &clock_gen)),
+                            Rule::periodic_def => constraints.push(parse_periodic_def(field)),
+                            _ => unreachable!(),
+                        };
+                    }
                 }
+                Rule::EOI => (),
+                _ => unreachable!(),
             }
-            Rule::EOI => (),
-            _ => unreachable!(),
         }
-    }
 
-    Ok(Specification {
-        name,
-        clocks,
-        constraints,
-    })
-}
-
-pub fn parse_to_u32(input: &str) -> Result<Specification<u32>, ParseError> {
-    let spec = parse(input)?;
-    let unique_clocks: HashMap<_, _> = spec
-        .constraints
-        .iter()
-        .flat_map(|c| c.clocks().into_iter())
-        .unique()
-        .enumerate()
-        .map(|(i, c)| (c, i as u32))
-        .collect();
-    Ok(Specification {
-        name: spec.name,
-        clocks: spec
-            .clocks
-            .into_iter()
-            .map(|c| *unique_clocks.get(&c).unwrap())
-            .collect(),
-        constraints: spec
-            .constraints
-            .iter()
-            .map(|c| c.map_clocks(|c| *unique_clocks.get(&c).unwrap()))
-            .collect(),
-    })
-}
-
-pub fn parse_to_string(input: &str) -> Result<Specification<String>, ParseError> {
-    let spec = parse(input)?;
-    let unique_clocks: HashSet<_> = spec
-        .constraints
-        .iter()
-        .flat_map(|c| {
-            c.clocks().into_iter().filter_map(|c| match c {
-                ID::C(s) => Some(s),
-                ID::G(_) => None,
-            })
+        Ok(Specification {
+            name,
+            clocks,
+            constraints,
         })
-        .collect();
-    // FIXME: random as prefix for generated clocks is cringe
-    let prefix = "gc_";
-    if unique_clocks.contains(&prefix) {
-        panic!("couldn't generate prefix for numeric clocks")
     }
+}
 
-    Ok(Specification {
-        name: spec.name,
-        clocks: spec
-            .clocks
-            .into_iter()
-            .map(|c| match c {
-                ID::C(s) => s.to_owned(),
-                ID::G(n) => format!("{}{}", prefix, n),
-            })
-            .collect(),
-        constraints: spec
+impl<'a> TryFrom<&'a str> for Specification<u32> {
+    type Error = ParseError;
+
+    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
+        let spec: Specification<ID> = input.try_into()?;
+        let unique_clocks: HashMap<_, _> = spec
             .constraints
             .iter()
-            .map(|c| {
-                c.map_clocks(|c| match c {
-                    ID::C(s) => (*s).to_owned(),
-                    ID::G(n) => format!("{}{}", prefix, n),
+            .flat_map(|c| c.clocks().into_iter())
+            .unique()
+            .enumerate()
+            .map(|(i, c)| (c, i as u32))
+            .collect();
+        Ok(Specification {
+            name: spec.name,
+            clocks: spec
+                .clocks
+                .into_iter()
+                .map(|c| *unique_clocks.get(&c).unwrap())
+                .collect(),
+            constraints: spec
+                .constraints
+                .iter()
+                .map(|c| c.map_clocks(|c| *unique_clocks.get(&c).unwrap()))
+                .collect(),
+        })
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Specification<String> {
+    type Error = ParseError;
+
+    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
+        let spec: Specification<ID> = input.try_into()?;
+        let unique_clocks: HashSet<_> = spec
+            .constraints
+            .iter()
+            .flat_map(|c| {
+                c.clocks().into_iter().filter_map(|c| match c {
+                    ID::C(s) => Some(s),
+                    ID::G(_) => None,
                 })
             })
-            .collect(),
-    })
+            .collect();
+        // FIXME: random as prefix for generated clocks is cringe
+        let prefix = "gc_";
+        if unique_clocks.contains(&prefix) {
+            panic!("couldn't generate prefix for numeric clocks")
+        }
+
+        Ok(Specification {
+            name: spec.name,
+            clocks: spec
+                .clocks
+                .into_iter()
+                .map(|c| match c {
+                    ID::C(s) => s.to_owned(),
+                    ID::G(n) => format!("{}{}", prefix, n),
+                })
+                .collect(),
+            constraints: spec
+                .constraints
+                .iter()
+                .map(|c| {
+                    c.map_clocks(|c| match c {
+                        ID::C(s) => (*s).to_owned(),
+                        ID::G(n) => format!("{}{}", prefix, n),
+                    })
+                })
+                .collect(),
+        })
+    }
 }
 
 fn parse_clocks(input: Pair<Rule>) -> impl Iterator<Item = ID> {
@@ -457,12 +510,6 @@ fn parse_infint(input: Pair<Rule>) -> Option<usize> {
     }
 }
 
-impl<T> From<Specification<T>> for crate::kernel::constraints::Specification<T> {
-    fn from(spec: Specification<T>) -> Self {
-        Self(spec.constraints)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,7 +553,7 @@ mod tests {
             Let out be m and t
             ]
         }";
-        let spec_const = parse_to_string(spec).expect("should parse");
+        let spec_const: Specification<String> = spec.try_into().expect("should parse");
         let spec = render(&spec_const.constraints, &spec_const.name);
         assert_eq!(
             remove_whitespace(&spec),

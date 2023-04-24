@@ -1,9 +1,10 @@
 use crate::kernel::automata::Delta;
 use crate::kernel::constraints::{
     Causality, Coincidence, Delay, Exclusion, Infimum, Intersection, Minus, Precedence, Repeat,
-    SampleOn, Slice, Specification, Subclocking, Supremum, Union,
+    SampleOn, Slice, Subclocking, Supremum, Union,
 };
 use crate::kernel::expressions::{BooleanExpression, IntegerExpression};
+use crate::lccsl::parser::Specification;
 use derive_more::From;
 use itertools::Itertools;
 use map_macro::{map, set};

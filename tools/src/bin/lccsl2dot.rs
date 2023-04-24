@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ccsl::dot::render_dot;
-use ccsl::lccsl::parser::parse_to_string;
+use ccsl::lccsl::parser::Specification;
 use std::io::read_to_string;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -20,7 +20,9 @@ struct App {
 fn main() -> Result<()> {
     let app: App = App::from_args();
 
-    let spec = parse_to_string(&read_to_string(file_or_stdin(&app.file)?)?)?;
+    let spec: Specification<String> = read_to_string(file_or_stdin(&app.file)?)?
+        .as_str()
+        .try_into()?;
     render_dot(
         &mut file_or_stdout(&app.out)?,
         &spec.name,

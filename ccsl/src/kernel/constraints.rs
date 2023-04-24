@@ -814,9 +814,6 @@ where
     }
 }
 
-#[derive(Debug, From, Into, Clone)]
-pub struct Specification<C>(pub Vec<Constraint<C>>);
-
 impl<C> Constraint<C> {
     pub fn map_clocks<B, F>(&self, f: F) -> Constraint<B>
     where
@@ -932,37 +929,5 @@ impl<C> Constraint<C> {
             Constraint::SampleOn(c) => c.into(),
             Constraint::Diff(c) => c.into(),
         }
-    }
-}
-
-impl<C> Specification<C> {
-    pub fn map_clocks<B, F>(&self, mut f: F) -> Specification<B>
-    where
-        F: FnMut(&C) -> B,
-        B: Ord,
-    {
-        Specification(self.0.iter().map(move |c| c.map_clocks(|c| f(c))).collect())
-    }
-
-    pub fn iter(&self) -> Iter<'_, Constraint<C>> {
-        self.into_iter()
-    }
-}
-
-impl<C> IntoIterator for Specification<C> {
-    type Item = Constraint<C>;
-    type IntoIter = IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'a, C> IntoIterator for &'a Specification<C> {
-    type Item = &'a Constraint<C>;
-    type IntoIter = Iter<'a, Constraint<C>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
     }
 }

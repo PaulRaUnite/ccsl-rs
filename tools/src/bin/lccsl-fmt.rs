@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ccsl::kernel::automata::label::ClockLabelClassic;
 use ccsl::lccsl::format::render;
-use ccsl::lccsl::parser::parse_to_string;
+use ccsl::lccsl::parser::Specification;
 use ccsl::optimization::optimize_by_min_front_init_weights;
 use std::fs::read_to_string;
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ struct App {
 fn main() -> Result<()> {
     let app: App = App::from_args();
 
-    let mut spec = parse_to_string(&read_to_string(&app.file)?)?;
+    let mut spec: Specification<String> = read_to_string(&app.file)?.as_str().try_into()?;
     let mut perm =
         optimize_by_min_front_init_weights::<_, ClockLabelClassic<String>>(&spec.constraints);
     perm.apply_slice_in_place(&mut spec.constraints);

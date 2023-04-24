@@ -12,10 +12,10 @@ use absint::interval::Interval;
 use absint::{Lattice, Prec, SequenceLimiter, Succ};
 
 use crate::kernel::automata::Delta;
-use crate::kernel::constraints::Specification;
 use crate::kernel::expressions::{
     BooleanComparisonKind, BooleanExpression, IntegerComparisonKind, IntegerExpression,
 };
+use crate::lccsl::parser::Specification;
 
 #[derive(Debug, Clone)]
 struct ProgramEffects<C> {
@@ -32,7 +32,7 @@ impl<C: Eq + Hash + Clone> From<&'_ Specification<C>> for ProgramEffects<C> {
         let mut counters = vec![];
         let mut invariants = vec![];
         for c in spec {
-            let invariant: Invariant<C> = Invariant(BooleanExpression::Constant(true));// FIXME: it is completely disabled
+            let invariant: Invariant<C> = Invariant(BooleanExpression::Constant(true)); // FIXME: it is completely disabled
             invariant.0.visit(&mut counters, &mut clocks);
             invariants.push(invariant);
         }
