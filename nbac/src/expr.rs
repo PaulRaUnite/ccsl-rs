@@ -27,6 +27,7 @@ impl<V: Display> Display for Expression<V> {
     }
 }
 
+// TODO: unify with CCSL expressions, just make it implement Display differently.
 #[derive(Debug, Clone)]
 pub enum IntegerExpression<V> {
     Variable(V),
@@ -290,7 +291,7 @@ impl<V> BooleanExpression<V> {
         match self {
             BooleanExpression::IntegerBinary { .. } => true,
             BooleanExpression::BooleanBinary { kind, .. } => Some(*kind) != outer_operation,
-            BooleanExpression::Not(expr) => false,
+            BooleanExpression::Not(_) => false,
             BooleanExpression::Constant(_) => false,
             BooleanExpression::Variable(_) => false,
             BooleanExpression::Exclusive(_) => false,

@@ -43,7 +43,10 @@ pub enum Expression<C> {
 }
 
 impl<C> Expression<C> {
-    fn map<NC>(&self, mut f: impl FnMut(&Variable<C>) -> Variable<NC> + Clone) -> Expression<NC> {
+    pub fn map<NC>(
+        &self,
+        mut f: impl FnMut(&Variable<C>) -> Variable<NC> + Clone,
+    ) -> Expression<NC> {
         match self {
             Expression::Bool(e) => {
                 Expression::Bool(e.map(&mut f.clone(), &mut f, &mut |c| *c, &mut |c| *c))
@@ -231,15 +234,16 @@ impl<C: Clone + Eq + Hash> From<&'_ Repeat<C>> for TransitionSystem<C> {
 
         let every = c.every - 1;
         TransitionSystem {
-            states: map! {counter_v => (0.into(), counter.eq(every as i64).if_then_else(0,base_e.if_then_else(counter.clone()+1.into(), counter.clone())).into())},
+            states: map! {counter_v => (0.into(), (counter.eq(c.every as i64).if_then_else(0,counter.clone()) + base_e.if_then_else(1, 0)).into())},
             inputs: set! {base_v,out_v},
-            restriction: counter.eq(every as i64) & base_e.eq(out_e.clone())
-                | counter.less(every as i64) & !out_e,
+            restriction: counter.eq(every as i64) & (base_e.eq(out_e.clone()))
+                | !counter.eq(every as i64) & (!out_e),
         }
     }
 }
 
 /// (d(a,b) = delay and a=b) or (d(a,b) < d and not b)
+/// check the correctness with deadline pattern: end < start $ 10 on ms --- ternary delay should tick after
 impl<C: Clone + Eq + Hash> From<&'_ Delay<C>> for TransitionSystem<C> {
     fn from(c: &'_ Delay<C>) -> Self {
         let base_v = c.on.as_ref().unwrap_or(&c.trigger).clone();
@@ -265,7 +269,7 @@ impl<C: Clone + Eq + Hash> From<&'_ Delay<C>> for TransitionSystem<C> {
                 .cloned()
                 .map(Variable::Clock)
                 .collect(),
-            restriction: counter.eq(delay).implies(sample_out.eq(out.clone()))
+            restriction: counter.more_eq(delay).implies(sample_out.eq(out.clone()))
                 & counter.less(delay).implies(!out),
         }
     }
@@ -344,7 +348,7 @@ impl<C: Clone + Eq + Hash + Display> FromIterator<TransitionSystem<C>> for Trans
                     let remapping: HashMap<&Variable<C>, Variable<C>> = conflict_variables
                         .iter()
                         .map(|(var, _)| (*var, Variable::Generic(format!("{}_{}", &var, i))))
-                        .collect();
+                        .collect(); // FIXME: should be able to rename variables retroactively, as further constraints may introduce clocks named the same way, while clocks names cannot be changed
                     let remap = |v: &Variable<C>| {
                         if let Some(nv) = remapping.get(v) {
                             nv.clone()

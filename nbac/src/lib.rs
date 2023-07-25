@@ -3,13 +3,14 @@ extern crate derive_more;
 #[macro_use]
 extern crate table_test;
 
+use ccsl::symbolic::ts;
 use ccsl::symbolic::ts::{Constant, TransitionSystem};
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum VariableDeclaration<V> {
     Bool(V),
     Integer(V),
@@ -30,6 +31,13 @@ impl<V> VariableDeclaration<V> {
         match self {
             VariableDeclaration::Bool(v) => v,
             VariableDeclaration::Integer(v) => v,
+        }
+    }
+
+    pub fn map<B>(self, mut f: impl FnMut(V) -> B) -> VariableDeclaration<B> {
+        match self {
+            VariableDeclaration::Bool(v) => VariableDeclaration::Bool(f(v)),
+            VariableDeclaration::Integer(v) => VariableDeclaration::Integer(f(v)),
         }
     }
 }
@@ -183,6 +191,9 @@ pub mod goal {
         VariableDeclaration,
     };
     use ccsl::kernel::test_corpus::Trace;
+    use ccsl::lccsl::parser::Specification;
+    use ccsl::symbolic::ts;
+    use ccsl::symbolic::ts::TransitionSystem;
     use itertools::Itertools;
     use std::ops::{BitAnd, BitOr, Not};
 
@@ -275,6 +286,18 @@ pub mod goal {
             init.if_then_elseb(true, ok & lock_count.less_eq(step_limit as i64)),
         );
         spec
+    }
+
+    pub fn custom_good_state(mut nbac_spec: Spec<Variable>, exp: String) -> Spec<Variable> {
+        let init = BooleanExpression::var("init".to_owned());
+        nbac_spec.transit(
+            "ok".to_owned(),
+            init.if_then_elseb(
+                true,
+                BooleanExpression::var("ok".to_owned()) & BooleanExpression::var(exp),
+            ),
+        );
+        nbac_spec
     }
 
     pub fn positive_trace_check<const L: usize>(
@@ -398,6 +421,67 @@ pub mod goal {
                     .reduce(BitOr::bitor)
                     .unwrap()
         });
+        spec
+    }
+
+    pub fn with_observer_spec(
+        mut spec: Specification<String>,
+        observer: Specification<String>,
+    ) -> Spec<Variable> {
+        let spec: TransitionSystem<Variable> = spec
+            .into_iter()
+            .map(|c| {
+                c.map_clocks(|clock| Variable::Owned(clock.clone()))
+                    .map_ref_into()
+            })
+            .collect();
+        let mut observer: TransitionSystem<Variable> = observer
+            .into_iter()
+            .map(|c| {
+                c.map_clocks(|clock| Variable::Owned(clock.clone()))
+                    .map_ref_into()
+            })
+            .collect();
+        let mut f = |v: &ts::Variable<Variable>| match v {
+            ts::Variable::Clock(c) => ts::Variable::Clock(c.clone()),
+            ts::Variable::Delta(d) => ts::Variable::Generic(format!("obs_{}_{}", d.0, d.1)),
+            ts::Variable::Generic(g) => ts::Variable::Generic(format!("obs_{}", g)),
+        };
+        observer.states = observer
+            .states
+            .into_iter()
+            .map(|(c, (init, e))| (f(&c), (init, e.map(f))))
+            .collect();
+        observer.restriction = observer.restriction.map_var(&mut f, &mut |v| v.clone());
+
+        let mut spec: Spec<Variable> = spec.into();
+        let observer: Spec<Variable> = observer.into();
+        spec.inputs = spec
+            .inputs
+            .into_iter()
+            .chain(observer.inputs)
+            .unique()
+            .collect();
+        spec.states.extend(
+            observer
+                .states
+                .into_iter()
+                .filter(|v| v.variable() != "init" && v.variable() != "ok"),
+        );
+        spec.transitions.extend(observer.transitions);
+        let assertion = match observer.assertion.unwrap() {
+            BooleanExpression::BooleanBinary {
+                kind,
+                left: _,
+                right,
+            } if kind == BooleanComparisonKind::Or => right,
+            _ => panic!("unexpected operation in root of assertion"),
+        };
+        spec.transit(
+            "ok",
+            BooleanExpression::var("init")
+                .if_then_elseb(true, BooleanExpression::var("ok") & *assertion),
+        );
         spec
     }
 }

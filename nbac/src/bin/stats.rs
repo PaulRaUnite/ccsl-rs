@@ -27,7 +27,11 @@ fn main() -> Result<()> {
     let app: App = App::from_args();
 
     match app.cmd {
-        Cmd::Gen { dir, csv } => gen(&dir, &csv),
+        Cmd::Gen { dir, csv } => gen(
+            &dir,
+            &csv,
+            Path::new("/home/ptokarie/code/ccsl-rs/nbac/tool/"),
+        ),
         Cmd::Plot { csv } => plot(&csv),
     }
 }
@@ -41,9 +45,9 @@ struct DataEntry {
     // nbac_time: Duration,
 }
 
-fn gen(dir: &Path, out: &Path) -> Result<()> {
+fn gen(dir: &Path, out: &Path, nbac: &Path) -> Result<()> {
     let mut wrt = csv::Writer::from_path(out)?;
-    let mut errs = csv::Writer::from_path("./examples/err.csv")?;
+    let mut errs = csv::Writer::from_path(out.parent().unwrap().join("err.csv"))?;
     let mut crashes = 0;
     let mut results = vec![];
     let mut count = 0;
@@ -64,9 +68,10 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
         count += 1;
         println!("{} {}", count, &filename);
         let nbac_file = entry.path().with_extension("lc.nbac");
-        let output = Command::new("./target/release/ccsl2nbac")
+        let output = Command::new("../target/release/lccsl2nbac")
             .arg(entry.path())
             .arg(&nbac_file)
+            .arg("boundness")
             .output()?;
         if !output.status.success() {
             errs.write_record([
@@ -79,8 +84,8 @@ fn gen(dir: &Path, out: &Path) -> Result<()> {
             println!("ccsl2nbac crashed: {}", &filename);
             continue;
         }
-        let output = Command::new("./nbac/tool/nbacg.opt")
-            .env("LD_LIBRARY_PATH", "./nbac/tool/")
+        let output = Command::new(nbac.join("nbacg.opt"))
+            .env("LD_LIBRARY_PATH", nbac)
             .arg("-postpre")
             .arg("-drelation 1") // TODO: fixes crashes, but why??
             .arg(&nbac_file)

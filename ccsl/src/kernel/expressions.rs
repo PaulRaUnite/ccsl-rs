@@ -478,7 +478,7 @@ where
     {
         match self {
             IntegerExpression::Variable(v) => int_var.extend(once(v.clone())),
-            IntegerExpression::Constant(c) => {}
+            IntegerExpression::Constant(_) => {}
             IntegerExpression::IntegerBinary { left, right, .. } => {
                 left.visit(int_var, bool_var);
                 right.visit(int_var, bool_var);
@@ -516,7 +516,7 @@ where
                 right.visit(int_var, bool_var);
             }
             BooleanExpression::Not(expr) => expr.visit(int_var, bool_var),
-            BooleanExpression::Constant(c) => {}
+            BooleanExpression::Constant(_) => {}
             BooleanExpression::Variable(v) => bool_var.extend(once(v.clone())),
         }
     }

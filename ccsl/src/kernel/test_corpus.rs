@@ -404,7 +404,7 @@ pub fn repeat() -> (Constraint<usize>, TestSet<usize, 1>) {
         (Trace(vec![(0, [0b00000000]), (1, [0b00000000])]), true),
         (Trace(vec![(0, [0b00100100]), (1, [0b11111111])]), true),
         (Trace(vec![(0, [0b11111111]), (1, [0b00000000])]), false),
-        (Trace(vec![(0, [0b00000100]), (1, [0b01010101])]), false),
+        (Trace(vec![(0, [0b00000100]), (1, [0b01010101])]), true),
         (Trace(vec![(0, [0b00000000]), (1, [0b11111111])]), false),
     ];
 

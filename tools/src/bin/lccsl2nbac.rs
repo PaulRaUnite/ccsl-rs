@@ -1,8 +1,7 @@
 use anyhow::Result;
-use ccsl::kernel::constraints::Specification;
-use ccsl::lccsl::parser::parse_to_string;
+use ccsl::lccsl::parser::Specification;
 use ccsl::symbolic::ts::TransitionSystem;
-use nbac::goal::{boundness, deadlock};
+use nbac::goal::{boundness, custom_good_state, deadlock};
 use std::io::read_to_string;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -30,12 +29,16 @@ enum Property {
         #[structopt(short, long, default_value = "256")]
         limit: u32,
     },
+    Custom {
+        expression: String, // FIXME: no validation, not good.
+    },
 }
 
 fn main() -> Result<()> {
     let args = App::from_args();
-    let spec: Specification<String> =
-        parse_to_string(&read_to_string(file_or_stdin(&args.spec)?)?)?.into();
+    let spec: Specification<String> = read_to_string(file_or_stdin(&args.spec)?)?
+        .as_str()
+        .try_into()?;
     let nbac_spec = spec
         .into_iter()
         .map(|c| c.map_ref_into())
@@ -44,6 +47,7 @@ fn main() -> Result<()> {
     let nbac_spec = match args.property {
         Property::Boundness { bound } => boundness(nbac_spec, bound),
         Property::Liveness { limit } => deadlock(nbac_spec, limit),
+        Property::Custom { expression } => custom_good_state(nbac_spec, expression),
     };
     write!(&mut file_or_stdout(&args.out)?, "{}", nbac_spec)?;
     Ok(())

@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::iter::once;
 
-use derive_more::{From, Into};
+use derive_more::From;
 use itertools::Itertools;
 
 use crate::kernel::automata::label::Label;
@@ -14,8 +14,6 @@ use crate::kernel::expressions::{BooleanExpression, IntegerExpression};
 use crate::{tr, trigger, trigger_value};
 use std::cmp::max;
 use std::ops::BitOr;
-use std::slice::Iter;
-use std::vec::IntoIter;
 
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct Coincidence<C> {

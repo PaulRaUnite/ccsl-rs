@@ -366,7 +366,7 @@ pub fn render_dot<C: Display + Hash + Eq + Clone, W: Write>(
                 );
                 g.add_edge(sample.trigger, sample_node, Edge::asyncronous());
             }
-            Constraint::Diff(diff) => panic!("wtf is diff"),
+            Constraint::Diff(_) => panic!("wtf is diff"),
         }
     }
     let g = SpecificationGraph(name.to_string(), g);
